@@ -99,11 +99,11 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-[#1A1B1D] px-4">
+      <Card className="w-full max-w-md bg-[#252628] border-[#2A2B2D]">
         <CardHeader>
-          <CardTitle>회원가입</CardTitle>
-          <CardDescription>
+          <CardTitle className="text-white">회원가입</CardTitle>
+          <CardDescription className="text-gray-400">
             재활운동 관리 앱에 가입하세요
           </CardDescription>
         </CardHeader>
@@ -138,7 +138,7 @@ export default function SignUpPage() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>이름</FormLabel>
+                    <FormLabel className="text-gray-300">이름</FormLabel>
                     <FormControl>
                       <Input placeholder="이름을 입력하세요" {...field} />
                     </FormControl>
@@ -152,7 +152,7 @@ export default function SignUpPage() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>이메일</FormLabel>
+                    <FormLabel className="text-gray-300">이메일</FormLabel>
                     <FormControl>
                       <Input type="email" placeholder="이메일을 입력하세요" {...field} />
                     </FormControl>
@@ -166,7 +166,7 @@ export default function SignUpPage() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>비밀번호</FormLabel>
+                    <FormLabel className="text-gray-300">비밀번호</FormLabel>
                     <FormControl>
                       <Input type="password" placeholder="비밀번호를 입력하세요" {...field} />
                     </FormControl>
@@ -180,7 +180,7 @@ export default function SignUpPage() {
                 name="phone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>휴대폰 번호 (선택)</FormLabel>
+                    <FormLabel className="text-gray-300">휴대폰 번호 (선택)</FormLabel>
                     <FormControl>
                       <Input placeholder="010-1234-5678" {...field} />
                     </FormControl>
@@ -322,15 +322,15 @@ export default function SignUpPage() {
                 </>
               )}
 
-              <Button type="submit" className="w-full" disabled={isSubmitting}>
+              <Button type="submit" className="w-full gradient-teal" disabled={isSubmitting}>
                 {isSubmitting ? "처리 중..." : "회원가입"}
               </Button>
             </form>
           </Form>
 
-          <div className="mt-4 text-center text-sm">
+          <div className="mt-4 text-center text-sm text-gray-400">
             이미 계정이 있으신가요?{" "}
-            <Link href="/login" className="text-blue-600 hover:underline">
+            <Link href="/login" className="text-[#01B395] hover:underline">
               로그인
             </Link>
           </div>

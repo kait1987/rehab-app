@@ -30,6 +30,7 @@ export default function MapPage() {
     hasPtCoach?: boolean
   }>({})
   const [showFilters, setShowFilters] = useState(false)
+  const [viewMode, setViewMode] = useState<"map" | "list">("map") // 모바일용 뷰 모드
 
   useEffect(() => {
     loadLocationAndGyms()
@@ -131,10 +132,10 @@ export default function MapPage() {
 
   if (error && !location) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <Card className="max-w-md">
+      <div className="min-h-screen bg-[#1A1B1D] flex items-center justify-center p-4">
+        <Card className="max-w-md bg-[#252628] border-[#2A2B2D]">
           <CardContent className="py-8 text-center">
-            <p className="text-red-600 mb-4">{error}</p>
+            <p className="text-red-400 mb-4">{error}</p>
             <div className="space-y-2">
               <Input
                 placeholder="동네 이름 입력 (예: 강남역, 홍대입구)"
@@ -142,7 +143,7 @@ export default function MapPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyPress={(e) => e.key === "Enter" && handleSearch()}
               />
-              <Button onClick={handleSearch} className="w-full">
+              <Button onClick={handleSearch} className="w-full gradient-teal">
                 <Search className="h-4 w-4 mr-2" />
                 검색
               </Button>
@@ -159,36 +160,37 @@ export default function MapPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#1A1B1D]">
       {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-3">
-          <div className="flex items-center gap-3 mb-2">
-            <Button variant="ghost" size="sm" asChild>
+      <header className="bg-[#1A1B1D] border-b border-[#2A2B2D] sticky top-0 z-50">
+        <div className="container mx-auto px-3 md:px-4 py-2 md:py-3">
+          <div className="flex items-center gap-2 md:gap-3 mb-2">
+            <Button variant="ghost" size="sm" asChild className="min-w-[44px] min-h-[44px]">
               <Link href="/main">
-                <ArrowLeft className="h-4 w-4" />
+                <ArrowLeft className="h-5 w-5" />
               </Link>
             </Button>
-            <h1 className="text-xl font-bold text-blue-600 flex-1">주변 재활 헬스장</h1>
+            <h1 className="text-lg md:text-xl font-bold text-[#01B395] flex-1">주변 재활 헬스장</h1>
             <Button
               variant="outline"
               size="sm"
               onClick={() => setShowFilters(!showFilters)}
+              className="min-w-[44px] min-h-[44px]"
             >
-              <Filter className="h-4 w-4" />
+              <Filter className="h-5 w-5" />
             </Button>
           </div>
           <div className="flex items-center gap-2">
             <Input
-              placeholder="동네 이름 입력 (예: 강남역, 홍대입구)"
+              placeholder="동네 이름 입력"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-              className="flex-1"
+              className="flex-1 text-base"
             />
-            <Button onClick={handleSearch} size="sm">
-              <Search className="h-4 w-4 mr-1" />
-              검색
+            <Button onClick={handleSearch} size="sm" className="min-w-[60px] min-h-[44px] gradient-teal">
+              <Search className="h-4 w-4 md:mr-1" />
+              <span className="hidden md:inline">검색</span>
             </Button>
           </div>
         </div>
@@ -196,15 +198,41 @@ export default function MapPage() {
 
       {/* Filters */}
       {showFilters && (
-        <div className="bg-white border-b p-4">
+        <div className="bg-[#252628] border-b border-[#2A2B2D] p-4">
           <GymFilters filters={filters} onFiltersChange={setFilters} />
         </div>
       )}
 
+      {/* Mobile View Toggle */}
+      <div className="md:hidden bg-[#252628] border-b border-[#2A2B2D]">
+        <div className="flex">
+          <button
+            onClick={() => setViewMode("map")}
+            className={`flex-1 py-3 text-center font-medium transition-colors ${
+              viewMode === "map"
+                ? "text-[#01B395] border-b-2 border-[#01B395]"
+                : "text-gray-400"
+            }`}
+          >
+            지도
+          </button>
+          <button
+            onClick={() => setViewMode("list")}
+            className={`flex-1 py-3 text-center font-medium transition-colors ${
+              viewMode === "list"
+                ? "text-[#01B395] border-b-2 border-[#01B395]"
+                : "text-gray-400"
+            }`}
+          >
+            리스트 ({gyms.length})
+          </button>
+        </div>
+      </div>
+
       {/* Map and List */}
-      <div className="flex flex-col md:flex-row h-[calc(100vh-120px)]">
+      <div className="flex flex-col md:flex-row h-[calc(100vh-120px)] md:h-[calc(100vh-140px)]">
         {/* Map */}
-        <div className="flex-1 relative">
+        <div className={`${viewMode === "map" ? "flex" : "hidden"} md:flex flex-1 relative bg-[#1A1B1D]`}>
           {location ? (
             <KakaoMap
               center={location}
@@ -213,21 +241,21 @@ export default function MapPage() {
               className="w-full h-full"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gray-100">
-              <p className="text-gray-600">지도를 불러오는 중...</p>
+            <div className="w-full h-full flex items-center justify-center bg-[#1A1B1D]">
+              <p className="text-gray-400">지도를 불러오는 중...</p>
             </div>
           )}
         </div>
 
         {/* Gym List */}
-        <div className="w-full md:w-96 bg-white border-l overflow-y-auto">
+        <div className={`${viewMode === "list" ? "flex" : "hidden"} md:flex w-full md:w-96 bg-[#252628] border-l border-[#2A2B2D] overflow-y-auto`}>
           <div className="p-4">
             <div className="mb-4">
-              <h2 className="font-semibold mb-2">
+              <h2 className="font-semibold mb-2 text-white">
                 주변 헬스장 {gyms.length}개
               </h2>
               {location && (
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-gray-400">
                   반경 1km 내 검색 결과
                 </p>
               )}
@@ -235,11 +263,11 @@ export default function MapPage() {
 
             {isLoading ? (
               <div className="text-center py-8">
-                <p className="text-gray-600">검색 중...</p>
+                <p className="text-gray-400">검색 중...</p>
               </div>
             ) : gyms.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-gray-600 mb-2">주변에 헬스장이 없습니다</p>
+                <p className="text-gray-400 mb-2">주변에 헬스장이 없습니다</p>
                 <p className="text-sm text-gray-500">
                   필터를 조정하거나 다른 위치에서 검색해보세요
                 </p>
@@ -249,34 +277,34 @@ export default function MapPage() {
                 {gyms.map((gym) => (
                   <Card
                     key={gym.id}
-                    className="cursor-pointer hover:shadow-md transition-shadow"
+                    className="cursor-pointer hover:shadow-md transition-shadow active:bg-[#2A2B2D] bg-[#252628] border-[#2A2B2D]"
                     onClick={() => handleGymClick(gym)}
                   >
-                    <CardContent className="p-4">
+                    <CardContent className="p-3 md:p-4">
                       <div className="flex items-start justify-between mb-2">
-                        <h3 className="font-semibold text-lg">{gym.name}</h3>
-                        <Badge variant="outline">
+                        <h3 className="font-semibold text-lg text-white">{gym.name}</h3>
+                        <Badge variant="outline" className="border-[#01B395] text-[#01B395]">
                           {gym.distance ? `${gym.distance.toFixed(1)}km` : ""}
                         </Badge>
                       </div>
-                      <p className="text-sm text-gray-600 mb-2 flex items-center gap-1">
+                      <p className="text-sm text-gray-400 mb-2 flex items-center gap-1">
                         <MapPin className="h-3 w-3" />
                         {gym.address}
                       </p>
                       {gym.gym_facilities?.[0] && (
                         <div className="flex flex-wrap gap-1 mt-2">
                           {gym.gym_facilities[0].is_quiet && (
-                            <Badge variant="secondary" className="text-xs">
+                            <Badge variant="secondary" className="text-xs bg-[#1A1B1D] text-gray-300">
                               조용함
                             </Badge>
                           )}
                           {gym.gym_facilities[0].has_rehab_equipment && (
-                            <Badge variant="secondary" className="text-xs">
+                            <Badge variant="secondary" className="text-xs bg-[#1A1B1D] text-gray-300">
                               재활기구
                             </Badge>
                           )}
                           {gym.gym_facilities[0].has_parking && (
-                            <Badge variant="secondary" className="text-xs">
+                            <Badge variant="secondary" className="text-xs bg-[#1A1B1D] text-gray-300">
                               주차
                             </Badge>
                           )}

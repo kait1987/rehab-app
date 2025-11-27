@@ -57,7 +57,7 @@ export function GymReviews({ gymId }: GymReviewsProps) {
           {Object.entries(tagCounts)
             .sort((a, b) => b[1] - a[1])
             .map(([tag, count]) => (
-              <Badge key={tag} variant="secondary">
+              <Badge key={tag} variant="secondary" className="bg-[#1A1B1D] text-gray-300">
                 {tag} ({count})
               </Badge>
             ))}
@@ -90,30 +90,30 @@ export function GymReviews({ gymId }: GymReviewsProps) {
 
       {/* 리뷰 목록 */}
       {isLoading ? (
-        <div className="text-center py-8 text-gray-600">로딩 중...</div>
+        <div className="text-center py-8 text-gray-400">로딩 중...</div>
       ) : reviews.length === 0 ? (
-        <div className="text-center py-8 text-gray-600">
+        <div className="text-center py-8 text-gray-400">
           아직 리뷰가 없습니다. 첫 리뷰를 작성해보세요!
         </div>
       ) : (
         <div className="space-y-3">
           {reviews.map((review) => (
-            <Card key={review.id}>
+            <Card key={review.id} className="bg-[#252628] border-[#2A2B2D]">
               <CardContent className="p-4">
                 <div className="flex flex-wrap gap-2 mb-2">
                   {review.tags.map((tag) => (
-                    <Badge key={tag} variant="outline">
+                    <Badge key={tag} variant="outline" className="border-[#01B395] text-[#01B395]">
                       {tag}
                     </Badge>
                   ))}
                 </div>
                 {review.comment && (
-                  <p className="text-gray-700 mb-2">{review.comment}</p>
+                  <p className="text-gray-300 mb-2">{review.comment}</p>
                 )}
                 <p className="text-xs text-gray-500">
                   {new Date(review.created_at).toLocaleDateString("ko-KR")}
                   {review.is_admin_review && (
-                    <span className="ml-2 text-blue-600">운영자</span>
+                    <span className="ml-2 text-[#01B395]">운영자</span>
                   )}
                 </p>
               </CardContent>

@@ -63,17 +63,17 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-[#1A1B1D] px-4">
+      <Card className="w-full max-w-md bg-[#252628] border-[#2A2B2D]">
         <CardHeader>
-          <CardTitle>로그인</CardTitle>
-          <CardDescription>
+          <CardTitle className="text-white">로그인</CardTitle>
+          <CardDescription className="text-gray-400">
             재활운동 관리 앱에 로그인하세요
           </CardDescription>
         </CardHeader>
         <CardContent>
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded">
+            <div className="mb-4 p-3 bg-red-900/30 border border-red-700 text-red-300 rounded">
               {error}
             </div>
           )}
@@ -85,7 +85,7 @@ export default function LoginPage() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>이메일</FormLabel>
+                    <FormLabel className="text-gray-300">이메일</FormLabel>
                     <FormControl>
                       <Input type="email" placeholder="이메일을 입력하세요" {...field} />
                     </FormControl>
@@ -99,7 +99,7 @@ export default function LoginPage() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>비밀번호</FormLabel>
+                    <FormLabel className="text-gray-300">비밀번호</FormLabel>
                     <FormControl>
                       <Input type="password" placeholder="비밀번호를 입력하세요" {...field} />
                     </FormControl>
@@ -108,7 +108,7 @@ export default function LoginPage() {
                 )}
               />
 
-              <Button type="submit" className="w-full" disabled={isSubmitting}>
+              <Button type="submit" className="w-full gradient-teal" disabled={isSubmitting}>
                 {isSubmitting ? "로그인 중..." : "로그인"}
               </Button>
             </form>
@@ -116,13 +116,13 @@ export default function LoginPage() {
 
           <div className="mt-4 space-y-2 text-center text-sm">
             <div>
-              <Link href="/reset-password" className="text-blue-600 hover:underline">
+              <Link href="/reset-password" className="text-[#01B395] hover:underline">
                 비밀번호를 잊으셨나요?
               </Link>
             </div>
-            <div>
+            <div className="text-gray-400">
               계정이 없으신가요?{" "}
-              <Link href="/signup" className="text-blue-600 hover:underline">
+              <Link href="/signup" className="text-[#01B395] hover:underline">
                 회원가입
               </Link>
             </div>

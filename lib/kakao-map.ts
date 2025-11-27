@@ -2,22 +2,59 @@
 
 export function loadKakaoMapScript(apiKey: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Check if already loaded
     if (window.kakao && window.kakao.maps) {
       resolve()
       return
     }
 
+    // Check if script is already being loaded
+    const existingScript = document.querySelector('script[src*="dapi.kakao.com/v2/maps/sdk.js"]')
+    if (existingScript) {
+      // Wait for existing script to load
+      const checkInterval = setInterval(() => {
+        if (window.kakao && window.kakao.maps) {
+          clearInterval(checkInterval)
+          resolve()
+        }
+      }, 100)
+      
+      setTimeout(() => {
+        clearInterval(checkInterval)
+        if (!window.kakao || !window.kakao.maps) {
+          reject(new Error('Failed to load Kakao Map script: timeout'))
+        }
+      }, 10000)
+      return
+    }
+
+    if (!apiKey) {
+      reject(new Error('Kakao Map API key is required'))
+      return
+    }
+
     const script = document.createElement('script')
-    script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&autoload=false`
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&autoload=false`
     script.async = true
+    
     script.onload = () => {
-      window.kakao.load(() => {
-        resolve()
-      })
+      if (window.kakao && window.kakao.load) {
+        window.kakao.load(() => {
+          if (window.kakao && window.kakao.maps) {
+            resolve()
+          } else {
+            reject(new Error('Failed to initialize Kakao Map'))
+          }
+        })
+      } else {
+        reject(new Error('Kakao Map SDK loaded but initialization failed'))
+      }
     }
+    
     script.onerror = () => {
-      reject(new Error('Failed to load Kakao Map script'))
+      reject(new Error('Failed to load Kakao Map script: network error'))
     }
+    
     document.head.appendChild(script)
   })
 }

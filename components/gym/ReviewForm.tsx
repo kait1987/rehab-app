@@ -83,9 +83,9 @@ export function ReviewForm({ gymId, onSubmit }: ReviewFormProps) {
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
             <div>
               <Label className="mb-2 block">태그 선택 (필수)</Label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 {availableTags.map((tag) => (
-                  <div key={tag} className="flex items-center space-x-2">
+                  <div key={tag} className="flex items-center space-x-3 min-h-[44px]">
                     <Checkbox
                       id={tag}
                       checked={selectedTags.includes(tag)}
@@ -100,8 +100,9 @@ export function ReviewForm({ gymId, onSubmit }: ReviewFormProps) {
                           )
                         }
                       }}
+                      className="h-5 w-5"
                     />
-                    <Label htmlFor={tag} className="cursor-pointer text-sm">
+                    <Label htmlFor={tag} className="cursor-pointer text-base flex-1">
                       {tag}
                     </Label>
                   </div>

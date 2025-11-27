@@ -63,17 +63,30 @@ export default function CourseResultPage() {
 
     // 코스에 맞는 필터 설정
     const filters: any = {}
+    
+    // 재활 코스이므로 조용한 곳과 재활기구가 있는 곳을 우선 추천
+    filters.isQuiet = true
+    
+    // 코스에 필요한 기구가 있으면 재활기구 보유 헬스장 필터 적용
     if (course.equipment_types && course.equipment_types.length > 0) {
       filters.hasRehabEquipment = true
     }
-    filters.isQuiet = true
+    
+    // 통증 레벨이 높으면 조용한 곳을 더 강조
+    if (course.pain_level && course.pain_level >= 4) {
+      filters.isQuiet = true
+    }
 
     const filterParams = new URLSearchParams()
     Object.entries(filters).forEach(([key, value]) => {
       if (value) filterParams.append(key, "true")
     })
 
-    // 코스 정보도 함께 전달 (선택사항)
+    // 코스 정보를 URL에 포함하여 지도 페이지에서 표시할 수 있도록 함
+    if (course.body_part) {
+      filterParams.append("courseBodyPart", course.body_part)
+    }
+
     router.push(`/map?${filterParams.toString()}`)
   }
 
@@ -121,21 +134,44 @@ export default function CourseResultPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-3 flex items-center gap-3">
-          <Button variant="ghost" size="sm" asChild>
+        <div className="container mx-auto px-3 md:px-4 py-2 md:py-3 flex items-center gap-2 md:gap-3">
+          <Button variant="ghost" size="sm" asChild className="min-w-[44px] min-h-[44px]">
             <Link href="/main">
-              <ArrowLeft className="h-4 w-4" />
+              <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <h1 className="text-xl font-bold text-blue-600 flex-1">생성된 재활 코스</h1>
-          <Button variant="outline" size="sm" onClick={handleSaveCourse}>
-            <Save className="h-4 w-4 mr-1" />
-            저장
+          <h1 className="text-lg md:text-xl font-bold text-blue-600 flex-1">생성된 재활 코스</h1>
+          <Button variant="outline" size="sm" onClick={handleSaveCourse} className="min-h-[44px]">
+            <Save className="h-4 w-4 md:mr-1" />
+            <span className="hidden md:inline">저장</span>
           </Button>
         </div>
       </header>
 
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <div className="container mx-auto px-3 md:px-4 py-6 md:py-8 max-w-4xl">
+        {/* 의료 안내 문구 */}
+        <Card className="mb-4 md:mb-6 bg-yellow-50 border-yellow-400 border-2">
+          <CardContent className="p-4 md:p-6">
+            <div className="flex items-start gap-2 md:gap-3">
+              <div className="flex-shrink-0 w-7 h-7 md:w-8 md:h-8 bg-yellow-500 rounded-full flex items-center justify-center text-white font-bold text-sm md:text-base">
+                !
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-yellow-900 mb-2 text-sm md:text-base">중요 안내사항</h3>
+                <p className="text-xs md:text-sm text-yellow-800 mb-2">
+                  본 서비스에서 제공하는 재활 운동 코스는 <strong>의료적 진단이나 치료가 아닌, 일반적인 운동 정보</strong>입니다.
+                </p>
+                <ul className="text-xs md:text-sm text-yellow-800 space-y-1 list-disc list-inside">
+                  <li>운동 중 통증이 심화되거나 불편함이 느껴지면 즉시 중단하시기 바랍니다.</li>
+                  <li>심각한 통증이나 부상이 있는 경우 반드시 전문의와 상담하시기 바랍니다.</li>
+                  <li>본 서비스의 운동 코스는 개인차가 있을 수 있으며, 모든 사용자에게 적합하지 않을 수 있습니다.</li>
+                  <li>운동 전 충분한 준비운동과 운동 후 스트레칭을 권장합니다.</li>
+                </ul>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* 코스 요약 */}
         <Card className="mb-6">
           <CardHeader>
@@ -158,7 +194,7 @@ export default function CourseResultPage() {
                 </Badge>
               )}
             </div>
-            <Button onClick={handleFindGyms} className="w-full">
+            <Button onClick={handleFindGyms} className="w-full min-h-[52px] text-base font-semibold">
               <MapPin className="h-4 w-4 mr-2" />
               이 코스 하기 좋은 근처 헬스장 보기
             </Button>
@@ -295,15 +331,6 @@ export default function CourseResultPage() {
           </Card>
         )}
 
-        {/* 안내 문구 */}
-        <Card className="bg-blue-50 border-blue-200">
-          <CardContent className="p-4">
-            <p className="text-sm text-blue-900">
-              <strong>안내:</strong> 이 코스는 의료적 진단·치료가 아닌 일반 운동 정보입니다.
-              통증이 심하거나 악화되면 즉시 운동을 중단하고 전문의 상담을 받으세요.
-            </p>
-          </CardContent>
-        </Card>
       </div>
     </div>
   )

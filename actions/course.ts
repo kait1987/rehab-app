@@ -5,8 +5,13 @@ import { revalidatePath } from "next/cache"
 import { CourseQuestionnaire } from "@/types"
 
 export async function generateCourse(questionnaire: CourseQuestionnaire) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  try {
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError) {
+      console.warn('인증 오류 (익명 사용자로 진행):', authError.message)
+    }
 
   const userId = user?.id || `anonymous_${Date.now()}`
 
@@ -23,11 +28,6 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     query = query.lte("pain_level", 3)
   }
 
-  // 기구 필터링
-  if (questionnaire.equipmentTypes.length > 0) {
-    query = query.contains("equipment_types", questionnaire.equipmentTypes)
-  }
-
   // 경험 수준 필터링
   if (questionnaire.experienceLevel === "거의 안 함") {
     query = query.eq("experience_level", "초보")
@@ -38,12 +38,58 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   const { data: templates, error: templateError } = await query
 
   if (templateError) {
-    return { error: templateError.message }
+    console.error('운동 템플릿 조회 오류:', templateError)
+    
+    // 테이블이 없는 경우 명확한 안내 메시지 제공
+    if (templateError.message?.includes('schema cache') || 
+        templateError.message?.includes('relation') ||
+        templateError.message?.includes('does not exist')) {
+      return { 
+        error: `데이터베이스 테이블이 없습니다. Supabase 대시보드의 SQL Editor에서 'lib/db/schema.sql' 파일의 내용을 실행하세요. 자세한 내용은 SUPABASE_SETUP.md를 참조하세요. (오류: ${templateError.message})`
+      }
+    }
+    
+    return { error: `운동 템플릿을 불러오는 중 오류가 발생했습니다: ${templateError.message}` }
   }
 
   if (!templates || templates.length === 0) {
-    return { error: "조건에 맞는 운동 템플릿을 찾을 수 없습니다." }
+    return { 
+      error: `조건에 맞는 운동 템플릿을 찾을 수 없습니다. (부위: ${questionnaire.bodyPart}, 통증: ${questionnaire.painLevel}, 기구: ${questionnaire.equipmentTypes.join(', ') || '없음'}, 경험: ${questionnaire.experienceLevel})` 
+    }
   }
+
+  // 기구 필터링 (클라이언트 측에서 필터링 - 더 유연하게)
+  let filteredTemplates = templates
+  if (questionnaire.equipmentTypes.length > 0) {
+    // 선택한 기구 중 하나라도 포함된 운동을 찾음
+    filteredTemplates = templates.filter((template: any) => {
+      if (!template.equipment_types || template.equipment_types.length === 0) {
+        // 기구가 없는 운동도 포함 (선택한 기구가 "없음"인 경우)
+        return questionnaire.equipmentTypes.includes('없음') || 
+               questionnaire.equipmentTypes.some((eq: string) => eq === '없음')
+      }
+      // 선택한 기구 중 하나라도 템플릿에 포함되어 있으면 OK
+      return questionnaire.equipmentTypes.some((eq: string) => 
+        template.equipment_types.includes(eq)
+      )
+    })
+  }
+
+  // 필터링 후에도 결과가 없으면 기구 필터를 완화
+  if (filteredTemplates.length === 0 && questionnaire.equipmentTypes.length > 0) {
+    console.warn('기구 필터로 인해 결과가 없어 필터를 완화합니다.')
+    // 기구 필터 없이 다시 시도 (부위, 통증, 경험만으로)
+    filteredTemplates = templates
+  }
+
+  if (filteredTemplates.length === 0) {
+    return { 
+      error: `조건에 맞는 운동 템플릿을 찾을 수 없습니다. 다른 기구를 선택하거나 다른 조건으로 시도해보세요. (부위: ${questionnaire.bodyPart}, 통증: ${questionnaire.painLevel})` 
+    }
+  }
+
+  // 필터링된 템플릿 사용
+  const finalTemplates = filteredTemplates
 
   // 코스 생성
   const totalDuration = questionnaire.duration || 90
@@ -78,7 +124,7 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   let cooldownTime = 0
 
   // 준비운동 (스트레칭 위주)
-  const warmupTemplates = templates
+  const warmupTemplates = finalTemplates
     .filter((t) => t.duration_minutes <= 10)
     .slice(0, 3)
   warmupTemplates.forEach((template, index) => {
@@ -94,7 +140,7 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   })
 
   // 메인 운동
-  const mainTemplates = templates
+  const mainTemplates = finalTemplates
     .filter((t) => t.duration_minutes >= 10)
     .slice(0, Math.floor(mainDuration / 15)) // 15분당 1개 운동
   mainTemplates.forEach((template, index) => {
@@ -113,7 +159,7 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   })
 
   // 마무리 스트레칭
-  const cooldownTemplates = templates
+  const cooldownTemplates = finalTemplates
     .filter((t) => t.duration_minutes <= 10)
     .slice(0, 2)
   cooldownTemplates.forEach((template, index) => {
@@ -152,7 +198,22 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     .eq("id", course.id)
     .single()
 
-  revalidatePath("/course")
-  return { success: true, data: courseWithExercises }
+    revalidatePath("/course")
+    return { success: true, data: courseWithExercises }
+  } catch (error) {
+    console.error('코스 생성 오류:', error)
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : '코스를 생성하는 중 오류가 발생했습니다.'
+    
+    // Supabase 연결 오류인 경우 명확한 메시지 제공
+    if (errorMessage.includes('Supabase') || errorMessage.includes('환경 변수')) {
+      return { 
+        error: '데이터베이스 연결에 실패했습니다. Supabase 설정을 확인하세요. 자세한 내용은 SUPABASE_SETUP.md를 참조하세요.' 
+      }
+    }
+    
+    return { error: errorMessage }
+  }
 }
 
