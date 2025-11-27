@@ -44,20 +44,30 @@ export default function MapPage() {
   }, [location, filters])
 
   const loadLocationAndGyms = async () => {
+    setIsLoading(true)
+    setError(null)
     try {
       // localStorage에서 저장된 위치 확인
       const savedLocation = localStorage.getItem("userLocation")
       if (savedLocation) {
-        const location = JSON.parse(savedLocation)
-        setLocation(location)
-        return
+        try {
+          const location = JSON.parse(savedLocation)
+          setLocation(location)
+          setIsLoading(false)
+          return
+        } catch (parseError) {
+          console.warn('저장된 위치 파싱 오류:', parseError)
+          localStorage.removeItem("userLocation")
+        }
       }
 
       // 현재 위치 가져오기
       const currentLocation = await getCurrentLocation()
       setLocation(currentLocation)
       localStorage.setItem("userLocation", JSON.stringify(currentLocation))
+      setIsLoading(false)
     } catch (err) {
+      console.error('위치 가져오기 오류:', err)
       // 위치 권한 거부 또는 오류 시 기본 위치 (강남역)
       const defaultLocation = { lat: 37.4979, lng: 127.0276 }
       setLocation(defaultLocation)
@@ -170,7 +180,7 @@ export default function MapPage() {
                 <ArrowLeft className="h-5 w-5" />
               </Link>
             </Button>
-            <h1 className="text-lg md:text-xl font-bold text-[#01B395] flex-1">주변 재활 헬스장</h1>
+            <h1 className="text-lg md:text-xl font-bold text-[#01B395] flex-1">주변 헬스장</h1>
             <Button
               variant="outline"
               size="sm"

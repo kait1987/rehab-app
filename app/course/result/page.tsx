@@ -35,6 +35,8 @@ export default function CourseResultPage() {
       const questionnaire: CourseQuestionnaire = JSON.parse(decodeURIComponent(dataParam))
       generateCourse(questionnaire)
         .then((result) => {
+          console.log('코스 생성 결과:', result)
+          
           if (result.error) {
             // 데이터베이스 테이블 오류인 경우 특별 처리
             if (result.error.includes('schema cache') || 
@@ -45,10 +47,21 @@ export default function CourseResultPage() {
             } else {
               setError(result.error)
             }
-          } else {
+            setIsLoading(false)
+          } else if (result.success && result.data) {
+            console.log('코스 데이터:', result.data)
             setCourse(result.data)
+            setIsLoading(false)
+          } else if (result.data) {
+            // success가 없어도 data가 있으면 사용
+            console.log('코스 데이터 (success 없음):', result.data)
+            setCourse(result.data)
+            setIsLoading(false)
+          } else {
+            console.error('코스 데이터가 없습니다:', result)
+            setError("코스 데이터를 불러올 수 없습니다.")
+            setIsLoading(false)
           }
-          setIsLoading(false)
         })
         .catch((err) => {
           console.error('코스 생성 오류:', err)
@@ -57,6 +70,7 @@ export default function CourseResultPage() {
           setIsLoading(false)
         })
     } catch (err) {
+      console.error('데이터 파싱 오류:', err)
       setError("데이터를 파싱하는 중 오류가 발생했습니다.")
       setIsLoading(false)
     }
@@ -174,28 +188,35 @@ export default function CourseResultPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-white">
               <Dumbbell className="h-5 w-5 text-[#01B395]" />
-              {course.body_part} 재활 코스
+              {course?.body_part || "재활"} 재활 코스
             </CardTitle>
             <CardDescription className="text-gray-400">
-              총 {course.total_duration}분 · 준비운동 {course.warmup_duration}분 · 메인{" "}
-              {course.main_duration}분 · 마무리 {course.cooldown_duration}분
+              총 {course?.total_duration || 0}분 · 준비운동 {course?.warmup_duration || 0}분 · 메인{" "}
+              {course?.main_duration || 0}분 · 마무리 {course?.cooldown_duration || 0}분
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2 mb-4">
-              <Badge className="bg-[#01B395] text-white">통증 {course.pain_level}/5</Badge>
-              <Badge variant="secondary" className="bg-[#252628] text-gray-300">{course.experience_level}</Badge>
-              {course.equipment_types && course.equipment_types.length > 0 && (
+              <Badge className="bg-[#01B395] text-white">통증 {course?.pain_level || 0}/5</Badge>
+              <Badge variant="secondary" className="bg-[#252628] text-gray-300">{course?.experience_level || "초보"}</Badge>
+              {course?.equipment_types && course.equipment_types.length > 0 && (
                 <Badge variant="outline" className="border-[#01B395] text-[#01B395]">
                   기구: {course.equipment_types.join(", ")}
                 </Badge>
               )}
             </div>
+            {(!course?.course_exercises || course.course_exercises.length === 0) && (
+              <div className="mt-4 p-4 bg-yellow-900/30 border border-yellow-700 rounded">
+                <p className="text-sm text-yellow-200">
+                  운동 목록이 아직 생성되지 않았습니다. 잠시 후 새로고침해주세요.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
         {/* Warmup Exercises */}
-        {course.course_exercises?.filter((e: any) => e.section === "warmup").length > 0 && (
+        {course?.course_exercises && Array.isArray(course.course_exercises) && course.course_exercises.filter((e: any) => e.section === "warmup").length > 0 && (
           <Card className="mb-6 bg-[#252628] border-[#2A2B2D]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-white">
@@ -242,7 +263,7 @@ export default function CourseResultPage() {
         )}
 
         {/* Main Exercises */}
-        {course.course_exercises?.filter((e: any) => e.section === "main").length > 0 && (
+        {course?.course_exercises && Array.isArray(course.course_exercises) && course.course_exercises.filter((e: any) => e.section === "main").length > 0 && (
           <Card className="mb-6 bg-[#252628] border-[#2A2B2D]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-white">
@@ -291,7 +312,7 @@ export default function CourseResultPage() {
         )}
 
         {/* Cooldown Exercises */}
-        {course.course_exercises?.filter((e: any) => e.section === "cooldown").length > 0 && (
+        {course?.course_exercises && Array.isArray(course.course_exercises) && course.course_exercises.filter((e: any) => e.section === "cooldown").length > 0 && (
           <Card className="mb-6 bg-[#252628] border-[#2A2B2D]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-white">
@@ -355,6 +376,13 @@ export default function CourseResultPage() {
 
         {/* Actions */}
         <div className="mt-6 flex flex-col sm:flex-row gap-3">
+          <Button 
+            onClick={handleFindGyms}
+            className="flex-1 min-h-[44px] gradient-teal"
+          >
+            <MapPin className="h-4 w-4 mr-2" />
+            헬스장 찾기
+          </Button>
           <Button asChild className="flex-1 min-h-[44px] gradient-teal">
             <Link href="/course/create">새 코스 만들기</Link>
           </Button>

@@ -1,20 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import localFont from "next/font/local";
 import "./globals.css";
 import { NotificationPrompt } from "@/components/shared/NotificationPrompt";
 import { ServiceWorkerRegistration } from "@/components/shared/ServiceWorkerRegistration";
 import { LocationHandler } from "@/components/shared/LocationHandler";
-
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
-});
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
-});
 
 export const metadata: Metadata = {
   title: "동네 재활 헬스장",
@@ -48,7 +36,7 @@ export default function RootLayout({
         <meta name="theme-color" content="#1A1B1D" />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased dark`}
+        className="antialiased dark"
       >
         {children}
         <LocationHandler />

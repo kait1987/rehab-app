@@ -22,11 +22,13 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     .eq("body_part", questionnaire.bodyPart)
 
   // 통증 레벨 필터링 (통증이 높으면 낮은 레벨 운동만)
+  // 통증 1-2: 모든 레벨 가능, 통증 3: 레벨 1-3, 통증 4-5: 레벨 1-2만
   if (questionnaire.painLevel >= 4) {
     query = query.lte("pain_level", 2)
-  } else if (questionnaire.painLevel >= 3) {
-    query = query.lte("pain_level", 3)
+  } else if (questionnaire.painLevel === 3) {
+    query = query.lte("pain_level", 3) // 통증 3이면 레벨 1, 2, 3 모두 포함
   }
+  // 통증 1-2는 필터링 없음 (모든 레벨 포함)
 
   // 경험 수준 필터링
   if (questionnaire.experienceLevel === "거의 안 함") {
@@ -53,38 +55,83 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   }
 
   if (!templates || templates.length === 0) {
+    const equipmentDisplay = questionnaire.equipmentTypes && questionnaire.equipmentTypes.length > 0 
+      ? questionnaire.equipmentTypes.join(', ') 
+      : '없음'
     return { 
-      error: `조건에 맞는 운동 템플릿을 찾을 수 없습니다. (부위: ${questionnaire.bodyPart}, 통증: ${questionnaire.painLevel}, 기구: ${questionnaire.equipmentTypes.join(', ') || '없음'}, 경험: ${questionnaire.experienceLevel})` 
+      error: `조건에 맞는 운동 템플릿을 찾을 수 없습니다. (부위: ${questionnaire.bodyPart}, 통증: ${questionnaire.painLevel}, 기구: ${equipmentDisplay}, 경험: ${questionnaire.experienceLevel})` 
     }
   }
 
   // 기구 필터링 (클라이언트 측에서 필터링 - 더 유연하게)
   let filteredTemplates = templates
-  if (questionnaire.equipmentTypes.length > 0) {
+  if (questionnaire.equipmentTypes && questionnaire.equipmentTypes.length > 0) {
+    console.log('기구 필터링 시작:', {
+      requested: questionnaire.equipmentTypes,
+      templatesCount: templates.length
+    })
+    
     // 선택한 기구 중 하나라도 포함된 운동을 찾음
     filteredTemplates = templates.filter((template: any) => {
+      // 템플릿에 기구 정보가 없는 경우
       if (!template.equipment_types || template.equipment_types.length === 0) {
-        // 기구가 없는 운동도 포함 (선택한 기구가 "없음"인 경우)
-        return questionnaire.equipmentTypes.includes('없음') || 
-               questionnaire.equipmentTypes.some((eq: string) => eq === '없음')
+        // 사용자가 "없음"을 선택한 경우만 포함
+        return questionnaire.equipmentTypes.includes('없음')
       }
+      
       // 선택한 기구 중 하나라도 템플릿에 포함되어 있으면 OK
-      return questionnaire.equipmentTypes.some((eq: string) => 
-        template.equipment_types.includes(eq)
+      const hasMatchingEquipment = questionnaire.equipmentTypes.some((eq: string) => 
+        Array.isArray(template.equipment_types) && template.equipment_types.includes(eq)
       )
+      
+      return hasMatchingEquipment
+    })
+    
+    console.log('기구 필터링 후:', {
+      filteredCount: filteredTemplates.length,
+      filteredTemplates: filteredTemplates.map((t: any) => ({
+        name: t.name,
+        equipment: t.equipment_types
+      }))
     })
   }
 
-  // 필터링 후에도 결과가 없으면 기구 필터를 완화
-  if (filteredTemplates.length === 0 && questionnaire.equipmentTypes.length > 0) {
+  // 필터링 후에도 결과가 없으면 기구 필터를 단계적으로 완화
+  if (filteredTemplates.length === 0 && questionnaire.equipmentTypes && questionnaire.equipmentTypes.length > 0) {
     console.warn('기구 필터로 인해 결과가 없어 필터를 완화합니다.')
-    // 기구 필터 없이 다시 시도 (부위, 통증, 경험만으로)
-    filteredTemplates = templates
+    
+    // 1단계: "없음" 기구도 포함하도록 완화
+    filteredTemplates = templates.filter((template: any) => {
+      if (!template.equipment_types || template.equipment_types.length === 0) {
+        return true // 기구가 없는 운동도 포함
+      }
+      // 선택한 기구 중 하나라도 템플릿에 포함되어 있으면 OK
+      return questionnaire.equipmentTypes.some((eq: string) => 
+        Array.isArray(template.equipment_types) && template.equipment_types.includes(eq)
+      )
+    })
+    
+    // 2단계: 여전히 결과가 없으면 기구 필터 완전 제거
+    if (filteredTemplates.length === 0) {
+      console.warn('기구 필터를 완전히 제거합니다.')
+      filteredTemplates = templates
+    }
   }
 
+  // 최종적으로도 결과가 없으면 에러 반환 (이 경우는 매우 드뭄)
   if (filteredTemplates.length === 0) {
+    const equipmentDisplay = questionnaire.equipmentTypes && questionnaire.equipmentTypes.length > 0 
+      ? questionnaire.equipmentTypes.join(', ') 
+      : '없음'
+    console.error('모든 필터를 완화했지만 여전히 결과가 없습니다:', {
+      bodyPart: questionnaire.bodyPart,
+      painLevel: questionnaire.painLevel,
+      equipmentTypes: questionnaire.equipmentTypes,
+      experienceLevel: questionnaire.experienceLevel,
+      templatesCount: templates.length
+    })
     return { 
-      error: `조건에 맞는 운동 템플릿을 찾을 수 없습니다. 다른 기구를 선택하거나 다른 조건으로 시도해보세요. (부위: ${questionnaire.bodyPart}, 통증: ${questionnaire.painLevel})` 
+      error: `조건에 맞는 운동 템플릿을 찾을 수 없습니다. 다른 기구를 선택하거나 다른 조건으로 시도해보세요. (부위: ${questionnaire.bodyPart}, 통증: ${questionnaire.painLevel}, 기구: ${equipmentDisplay}, 경험: ${questionnaire.experienceLevel})` 
     }
   }
 
@@ -186,7 +233,7 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   }
 
   // 생성된 코스와 운동 가져오기
-  const { data: courseWithExercises } = await supabase
+  const { data: courseWithExercises, error: fetchError } = await supabase
     .from("user_courses")
     .select(`
       *,
@@ -198,8 +245,20 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     .eq("id", course.id)
     .single()
 
-    revalidatePath("/course")
-    return { success: true, data: courseWithExercises }
+  if (fetchError) {
+    console.error('코스 조회 오류:', fetchError)
+    return { error: `생성된 코스를 불러오는 중 오류가 발생했습니다: ${fetchError.message}` }
+  }
+
+  if (!courseWithExercises) {
+    console.error('코스 데이터가 null입니다.')
+    return { error: '생성된 코스 데이터를 찾을 수 없습니다.' }
+  }
+
+  console.log('생성된 코스:', courseWithExercises)
+
+  revalidatePath("/course")
+  return { success: true, data: courseWithExercises }
   } catch (error) {
     console.error('코스 생성 오류:', error)
     const errorMessage = error instanceof Error 
