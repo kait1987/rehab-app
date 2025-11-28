@@ -30,8 +30,6 @@ const nextConfig = {
   experimental: {
     missingSuspenseWithCSRBailout: false,
   },
-  // Vercel 배포 시 route groups 문제 해결
-  output: 'standalone',
 };
 
 export default nextConfig;
