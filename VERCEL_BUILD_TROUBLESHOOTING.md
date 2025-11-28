@@ -86,7 +86,7 @@ Vercel 대시보드 → Deployments → 실패한 배포 클릭 → Build Logs �
 - [ ] Vercel 빌드 로그의 마지막 부분에 실제 에러가 있는가?
 - [ ] 환경 변수가 모두 설정되어 있는가?
 - [ ] Node.js 버전이 18 이상인가?
-- [ ] `(main)` route group이 제거되었는가?
+- [ ] route group 충돌이 없는가? (같은 경로를 가리키는 route group이 없는지 확인)
 - [ ] `next.config.mjs`에 `output: 'standalone'`이 없는가?
 
 ## 💡 팁

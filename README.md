@@ -87,11 +87,11 @@ pnpm dev
 ```
 rehab-app/
 ├── app/
-│   ├── (main)/              # 메인 페이지
-│   │   ├── page.tsx        # 홈
-│   │   ├── map/            # 지도 검색
-│   │   ├── gym/            # 헬스장 상세
-│   │   └── onboarding/     # 온보딩
+│   ├── page.tsx            # 홈 페이지
+│   ├── main/               # 메인 페이지
+│   ├── map/                # 지도 검색
+│   ├── gym/                # 헬스장 상세
+│   └── onboarding/         # 온보딩
 │   ├── (course)/           # 코스 생성
 │   │   ├── create/         # 코스 생성 플로우
 │   │   └── result/         # 코스 결과
