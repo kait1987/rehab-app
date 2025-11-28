@@ -67,6 +67,8 @@ declare namespace kakao.maps {
       ERROR = 'ERROR'
     }
   }
+
+  function load(callback: () => void): void
 }
 
 declare global {

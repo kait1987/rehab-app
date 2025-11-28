@@ -160,6 +160,5 @@ export function KakaoMap({ center, gyms, onGymClick, className }: KakaoMapProps)
     )
   }
 
-  return <div ref={mapRef} className={className} style={{ width: "100%", height: "100%" }} />
+  return <div id="map" ref={mapRef} className={className} style={{ width: "100%", height: "100%" }} />
 }
-
