@@ -162,6 +162,7 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   const mainDuration = Math.floor(totalDuration * 0.65) // 65%
   const cooldownDuration = totalDuration - warmupDuration - mainDuration // 20%
 
+  // 실제 운동 배정 후 시간 계산 (임시로 예상 시간 사용)
   const { data: course, error: courseError } = await supabase
     .from("user_courses")
     .insert({
@@ -182,40 +183,62 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     return { error: courseError.message }
   }
 
-  // 운동 배정
+  // 운동 배정 - 시간 기반 정확한 배정
   const exercises: any[] = []
-  let warmupTime = 0
-  let mainTime = 0
-  let cooldownTime = 0
   const usedTemplateIds = new Set<string>() // 이미 사용된 템플릿 ID 추적
-  const usedExerciseNames = new Set<string>() // 운동 이름 중복 방지 (추가 안전장치)
+  const usedExerciseNames = new Set<string>() // 운동 이름 중복 방지
 
-  // 준비운동 (스트레칭 위주, 5분 이하 우선)
-  const warmupCandidates = finalTemplates
-    .filter((t) => 
-      !usedTemplateIds.has(t.id) && 
-      !usedExerciseNames.has(t.name) && 
-      t.duration_minutes <= 10
+  // 사용 가능한 운동을 섞어서 다양하게 선택
+  const shuffleArray = <T>(array: T[]): T[] => {
+    const shuffled = [...array]
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+    }
+    return shuffled
+  }
+
+  // 준비운동 선택 - 시간에 맞춰서
+  const getAvailableTemplates = (usedIds: Set<string>, usedNames: Set<string>) => {
+    return finalTemplates.filter((t) => 
+      !usedIds.has(t.id) && !usedNames.has(t.name)
     )
-    .sort((a, b) => a.duration_minutes - b.duration_minutes) // 짧은 것부터
-  
-  // 운동이 부족하면 조건 완화
-  let warmupTemplates = warmupCandidates.slice(0, 3)
-  if (warmupTemplates.length < 3) {
-    // 10분 이하 운동이 부족하면 15분 이하로 확장
-    const extendedWarmup = finalTemplates
-      .filter((t) => 
-        !usedTemplateIds.has(t.id) && 
-        !usedExerciseNames.has(t.name) && 
-        t.duration_minutes <= 15
-      )
+  }
+
+  let remainingTime = warmupDuration
+  const warmupTemplates: any[] = []
+  const warmupCandidates = shuffleArray(
+    getAvailableTemplates(usedTemplateIds, usedExerciseNames)
+      .filter((t) => t.duration_minutes <= 15) // 준비운동은 15분 이하
       .sort((a, b) => a.duration_minutes - b.duration_minutes)
-    warmupTemplates = [...warmupTemplates, ...extendedWarmup.slice(0, 3 - warmupTemplates.length)]
+  )
+
+  // 준비운동: 목표 시간에 맞춰서 선택 (최소 2개, 최대 5개)
+  for (const template of warmupCandidates) {
+    if (remainingTime <= 0) break
+    if (warmupTemplates.length >= 5) break
+    
+    if (template.duration_minutes <= remainingTime) {
+      warmupTemplates.push(template)
+      usedTemplateIds.add(template.id)
+      usedExerciseNames.add(template.name)
+      remainingTime -= template.duration_minutes
+    }
+  }
+
+  // 최소 2개는 보장
+  if (warmupTemplates.length < 2) {
+    const additional = warmupCandidates
+      .filter((t) => !usedTemplateIds.has(t.id))
+      .slice(0, 2 - warmupTemplates.length)
+    warmupTemplates.push(...additional)
+    additional.forEach(t => {
+      usedTemplateIds.add(t.id)
+      usedExerciseNames.add(t.name)
+    })
   }
 
   warmupTemplates.forEach((template, index) => {
-    usedTemplateIds.add(template.id)
-    usedExerciseNames.add(template.name)
     exercises.push({
       course_id: course.id,
       exercise_template_id: template.id,
@@ -224,37 +247,43 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
       duration_seconds: template.duration_minutes * 60,
       order_index: index,
     })
-    warmupTime += template.duration_minutes
   })
 
-  // 메인 운동 (10분 이상, 강도 높은 운동)
-  const mainCandidates = finalTemplates
-    .filter((t) => 
-      !usedTemplateIds.has(t.id) && 
-      !usedExerciseNames.has(t.name) && 
-      t.duration_minutes >= 10
-    )
-    .sort((a, b) => b.duration_minutes - a.duration_minutes) // 긴 것부터
-  
-  const mainCount = Math.max(1, Math.floor(mainDuration / 15)) // 최소 1개
-  let mainTemplates = mainCandidates.slice(0, mainCount)
-  
-  // 운동이 부족하면 조건 완화
-  if (mainTemplates.length < mainCount) {
-    // 5분 이상 운동으로 확장
-    const extendedMain = finalTemplates
-      .filter((t) => 
-        !usedTemplateIds.has(t.id) && 
-        !usedExerciseNames.has(t.name) && 
-        t.duration_minutes >= 5
-      )
-      .sort((a, b) => b.duration_minutes - a.duration_minutes)
-    mainTemplates = [...mainTemplates, ...extendedMain.slice(0, mainCount - mainTemplates.length)]
+  const actualWarmupTime = warmupTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+
+  // 메인 운동 선택 - 시간에 맞춰서
+  remainingTime = mainDuration
+  const mainTemplates: any[] = []
+  const mainCandidates = shuffleArray(
+    getAvailableTemplates(usedTemplateIds, usedExerciseNames)
+      .filter((t) => t.duration_minutes >= 5) // 메인 운동은 5분 이상
+      .sort((a, b) => b.duration_minutes - a.duration_minutes) // 긴 것부터
+  )
+
+  // 메인 운동: 목표 시간에 맞춰서 선택
+  for (const template of mainCandidates) {
+    if (remainingTime <= 0) break
+    if (mainTemplates.length >= 8) break // 최대 8개
+    
+    if (template.duration_minutes <= remainingTime) {
+      mainTemplates.push(template)
+      usedTemplateIds.add(template.id)
+      usedExerciseNames.add(template.name)
+      remainingTime -= template.duration_minutes
+    }
+  }
+
+  // 최소 1개는 보장
+  if (mainTemplates.length === 0) {
+    const first = mainCandidates.find((t) => !usedTemplateIds.has(t.id))
+    if (first) {
+      mainTemplates.push(first)
+      usedTemplateIds.add(first.id)
+      usedExerciseNames.add(first.name)
+    }
   }
 
   mainTemplates.forEach((template, index) => {
-    usedTemplateIds.add(template.id)
-    usedExerciseNames.add(template.name)
     exercises.push({
       course_id: course.id,
       exercise_template_id: template.id,
@@ -266,36 +295,47 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
       rest_seconds: 60,
       order_index: index,
     })
-    mainTime += template.duration_minutes
   })
 
-  // 마무리 스트레칭 (5-10분, 준비운동과 다른 운동)
-  const cooldownCandidates = finalTemplates
-    .filter((t) => 
-      !usedTemplateIds.has(t.id) && 
-      !usedExerciseNames.has(t.name) && 
-      t.duration_minutes <= 10
-    )
-    .sort((a, b) => a.duration_minutes - b.duration_minutes) // 짧은 것부터
-  
-  let cooldownTemplates = cooldownCandidates.slice(0, 2)
-  
-  // 운동이 부족하면 조건 완화
-  if (cooldownTemplates.length < 2) {
-    // 15분 이하 운동으로 확장
-    const extendedCooldown = finalTemplates
-      .filter((t) => 
-        !usedTemplateIds.has(t.id) && 
-        !usedExerciseNames.has(t.name) && 
-        t.duration_minutes <= 15
-      )
+  const actualMainTime = mainTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+
+  // 마무리 운동 선택 - 반드시 생성, 시간에 맞춰서
+  remainingTime = cooldownDuration
+  const cooldownTemplates: any[] = []
+  const cooldownCandidates = shuffleArray(
+    getAvailableTemplates(usedTemplateIds, usedExerciseNames)
+      .filter((t) => t.duration_minutes <= 15) // 마무리 운동은 15분 이하
       .sort((a, b) => a.duration_minutes - b.duration_minutes)
-    cooldownTemplates = [...cooldownTemplates, ...extendedCooldown.slice(0, 2 - cooldownTemplates.length)]
+  )
+
+  // 마무리 운동: 목표 시간에 맞춰서 선택 (최소 2개)
+  for (const template of cooldownCandidates) {
+    if (remainingTime <= 0 && cooldownTemplates.length >= 2) break
+    if (cooldownTemplates.length >= 5) break
+    
+    if (template.duration_minutes <= remainingTime || cooldownTemplates.length < 2) {
+      cooldownTemplates.push(template)
+      usedTemplateIds.add(template.id)
+      usedExerciseNames.add(template.name)
+      if (remainingTime > 0) {
+        remainingTime -= template.duration_minutes
+      }
+    }
+  }
+
+  // 최소 2개는 반드시 보장
+  if (cooldownTemplates.length < 2) {
+    const additional = cooldownCandidates
+      .filter((t) => !usedTemplateIds.has(t.id))
+      .slice(0, 2 - cooldownTemplates.length)
+    cooldownTemplates.push(...additional)
+    additional.forEach(t => {
+      usedTemplateIds.add(t.id)
+      usedExerciseNames.add(t.name)
+    })
   }
 
   cooldownTemplates.forEach((template, index) => {
-    usedTemplateIds.add(template.id)
-    usedExerciseNames.add(template.name)
     exercises.push({
       course_id: course.id,
       exercise_template_id: template.id,
@@ -304,17 +344,75 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
       duration_seconds: template.duration_minutes * 60,
       order_index: index,
     })
-    cooldownTime += template.duration_minutes
   })
 
-  // 운동이 부족한 경우 경고 로그
-  if (exercises.length < 5) {
-    console.warn('운동 템플릿이 부족합니다. 더 많은 운동 데이터를 추가해주세요.', {
-      totalExercises: exercises.length,
-      warmupCount: warmupTemplates.length,
-      mainCount: mainTemplates.length,
-      cooldownCount: cooldownTemplates.length,
-      availableTemplates: finalTemplates.length
+  const actualCooldownTime = cooldownTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+  
+  // 실제 시간으로 업데이트
+  const actualTotalTime = actualWarmupTime + actualMainTime + actualCooldownTime
+
+  // 실제 시간으로 코스 업데이트
+  if (course) {
+    await supabase
+      .from("user_courses")
+      .update({
+        warmup_duration: actualWarmupTime,
+        main_duration: actualMainTime,
+        cooldown_duration: actualCooldownTime,
+        total_duration: actualTotalTime,
+      })
+      .eq("id", course.id)
+  }
+
+  // 운동 배정 완료 로그
+  console.log('운동 배정 완료:', {
+    totalExercises: exercises.length,
+    warmupCount: warmupTemplates.length,
+    mainCount: mainTemplates.length,
+    cooldownCount: cooldownTemplates.length,
+    warmupTime: actualWarmupTime,
+    mainTime: actualMainTime,
+    cooldownTime: actualCooldownTime,
+    totalTime: actualTotalTime,
+    targetTime: totalDuration,
+    warmupNames: warmupTemplates.map(t => t.name),
+    mainNames: mainTemplates.map(t => t.name),
+    cooldownNames: cooldownTemplates.map(t => t.name),
+    uniqueExercises: usedTemplateIds.size
+  })
+  
+  // 검증: 마무리 운동이 반드시 있어야 함
+  if (cooldownTemplates.length === 0) {
+    console.error('마무리 운동이 생성되지 않았습니다!')
+    // 강제로 마무리 운동 추가
+    const anyRemaining = finalTemplates
+      .filter((t) => !usedTemplateIds.has(t.id))
+      .slice(0, 2)
+    if (anyRemaining.length > 0) {
+      anyRemaining.forEach((template, index) => {
+        usedTemplateIds.add(template.id)
+        usedExerciseNames.add(template.name)
+        exercises.push({
+          course_id: course.id,
+          exercise_template_id: template.id,
+          exercise_name: template.name,
+          section: "cooldown",
+          duration_seconds: template.duration_minutes * 60,
+          order_index: index,
+        })
+      })
+      console.log('마무리 운동 강제 추가:', anyRemaining.map(t => t.name))
+    }
+  }
+  
+  // 검증: 중복 확인
+  const exerciseNames = exercises.map(e => e.exercise_name)
+  const uniqueNames = new Set(exerciseNames)
+  if (exerciseNames.length !== uniqueNames.size) {
+    console.error('중복된 운동이 발견되었습니다!', {
+      total: exerciseNames.length,
+      unique: uniqueNames.size,
+      duplicates: exerciseNames.filter((name, index) => exerciseNames.indexOf(name) !== index)
     })
   }
 
