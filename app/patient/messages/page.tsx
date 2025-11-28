@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { ArrowLeft, MessageSquare, Send } from "lucide-react"
+import { ArrowLeft, MessageSquare } from "lucide-react"
 import { getConversations } from "@/actions/message"
 import { MessageList } from "./MessageList"
 import { MessageForm } from "./MessageForm"
@@ -46,9 +46,8 @@ export default async function MessagesPage({
   const therapistId = patient?.therapist_id
   const therapist = patient?.therapists?.profiles
 
-  // 대화 목록 가져오기
-  const conversationsResult = await getConversations()
-  const conversations = conversationsResult.data || []
+  // 대화 목록 가져오기 (향후 사용 예정)
+  await getConversations()
 
   // 선택된 대화 상대
   const selectedUserId = searchParams.userId || therapistId
