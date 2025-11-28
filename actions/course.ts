@@ -183,10 +183,18 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     return { error: courseError.message }
   }
 
-  // 운동 배정 - 시간 기반 정확한 배정
+  // 운동 배정 - 시간 기반 정확한 배정, 절대 중복 없음
   const exercises: any[] = []
-  const usedTemplateIds = new Set<string>() // 이미 사용된 템플릿 ID 추적
-  const usedExerciseNames = new Set<string>() // 운동 이름 중복 방지
+  const usedTemplateIds = new Set<string>() // 전체 사용된 템플릿 ID 추적
+  const usedExerciseNames = new Set<string>() // 전체 사용된 운동 이름 추적
+  
+  // 세션별 사용된 운동 추적 (중복 방지 강화)
+  const warmupUsedIds = new Set<string>()
+  const warmupUsedNames = new Set<string>()
+  const mainUsedIds = new Set<string>()
+  const mainUsedNames = new Set<string>()
+  const cooldownUsedIds = new Set<string>()
+  const cooldownUsedNames = new Set<string>()
 
   // 사용 가능한 운동을 섞어서 다양하게 선택
   const shuffleArray = <T>(array: T[]): T[] => {
@@ -198,43 +206,68 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     return shuffled
   }
 
-  // 준비운동 선택 - 시간에 맞춰서
-  const getAvailableTemplates = (usedIds: Set<string>, usedNames: Set<string>) => {
+  // 사용 가능한 템플릿 가져오기 (전체 + 세션별 중복 체크)
+  const getAvailableTemplates = (
+    globalUsedIds: Set<string>, 
+    globalUsedNames: Set<string>,
+    sessionUsedIds: Set<string>,
+    sessionUsedNames: Set<string>
+  ) => {
     return finalTemplates.filter((t) => 
-      !usedIds.has(t.id) && !usedNames.has(t.name)
+      !globalUsedIds.has(t.id) && 
+      !globalUsedNames.has(t.name) &&
+      !sessionUsedIds.has(t.id) &&
+      !sessionUsedNames.has(t.name)
     )
   }
 
+  // ========== 준비운동 선택 ==========
   let remainingTime = warmupDuration
   const warmupTemplates: any[] = []
   const warmupCandidates = shuffleArray(
-    getAvailableTemplates(usedTemplateIds, usedExerciseNames)
+    getAvailableTemplates(usedTemplateIds, usedExerciseNames, warmupUsedIds, warmupUsedNames)
       .filter((t) => t.duration_minutes <= 15) // 준비운동은 15분 이하
       .sort((a, b) => a.duration_minutes - b.duration_minutes)
   )
 
   // 준비운동: 목표 시간에 맞춰서 선택 (최소 2개, 최대 5개)
   for (const template of warmupCandidates) {
-    if (remainingTime <= 0) break
+    if (remainingTime <= 0 && warmupTemplates.length >= 2) break
     if (warmupTemplates.length >= 5) break
     
-    if (template.duration_minutes <= remainingTime) {
+    // 세션 내 중복 체크
+    if (warmupUsedIds.has(template.id) || warmupUsedNames.has(template.name)) {
+      continue
+    }
+    
+    if (template.duration_minutes <= remainingTime || warmupTemplates.length < 2) {
       warmupTemplates.push(template)
       usedTemplateIds.add(template.id)
       usedExerciseNames.add(template.name)
-      remainingTime -= template.duration_minutes
+      warmupUsedIds.add(template.id)
+      warmupUsedNames.add(template.name)
+      if (remainingTime > 0) {
+        remainingTime -= template.duration_minutes
+      }
     }
   }
 
   // 최소 2개는 보장
   if (warmupTemplates.length < 2) {
     const additional = warmupCandidates
-      .filter((t) => !usedTemplateIds.has(t.id))
+      .filter((t) => 
+        !usedTemplateIds.has(t.id) && 
+        !usedExerciseNames.has(t.name) &&
+        !warmupUsedIds.has(t.id) &&
+        !warmupUsedNames.has(t.name)
+      )
       .slice(0, 2 - warmupTemplates.length)
     warmupTemplates.push(...additional)
     additional.forEach(t => {
       usedTemplateIds.add(t.id)
       usedExerciseNames.add(t.name)
+      warmupUsedIds.add(t.id)
+      warmupUsedNames.add(t.name)
     })
   }
 
@@ -251,35 +284,52 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
 
   const actualWarmupTime = warmupTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
 
-  // 메인 운동 선택 - 시간에 맞춰서
+  // ========== 메인 운동 선택 ==========
+  // 준비운동에서 사용된 운동은 절대 사용하지 않음
   remainingTime = mainDuration
   const mainTemplates: any[] = []
   const mainCandidates = shuffleArray(
-    getAvailableTemplates(usedTemplateIds, usedExerciseNames)
+    getAvailableTemplates(usedTemplateIds, usedExerciseNames, mainUsedIds, mainUsedNames)
       .filter((t) => t.duration_minutes >= 5) // 메인 운동은 5분 이상
       .sort((a, b) => b.duration_minutes - a.duration_minutes) // 긴 것부터
   )
 
-  // 메인 운동: 목표 시간에 맞춰서 선택
+  // 메인 운동: 목표 시간에 맞춰서 선택, 준비운동과 절대 중복 없음
   for (const template of mainCandidates) {
-    if (remainingTime <= 0) break
+    if (remainingTime <= 0 && mainTemplates.length >= 1) break
     if (mainTemplates.length >= 8) break // 최대 8개
     
-    if (template.duration_minutes <= remainingTime) {
+    // 세션 내 중복 체크
+    if (mainUsedIds.has(template.id) || mainUsedNames.has(template.name)) {
+      continue
+    }
+    
+    if (template.duration_minutes <= remainingTime || mainTemplates.length < 1) {
       mainTemplates.push(template)
       usedTemplateIds.add(template.id)
       usedExerciseNames.add(template.name)
-      remainingTime -= template.duration_minutes
+      mainUsedIds.add(template.id)
+      mainUsedNames.add(template.name)
+      if (remainingTime > 0) {
+        remainingTime -= template.duration_minutes
+      }
     }
   }
 
   // 최소 1개는 보장
   if (mainTemplates.length === 0) {
-    const first = mainCandidates.find((t) => !usedTemplateIds.has(t.id))
+    const first = mainCandidates.find((t) => 
+      !usedTemplateIds.has(t.id) && 
+      !usedExerciseNames.has(t.name) &&
+      !mainUsedIds.has(t.id) &&
+      !mainUsedNames.has(t.name)
+    )
     if (first) {
       mainTemplates.push(first)
       usedTemplateIds.add(first.id)
       usedExerciseNames.add(first.name)
+      mainUsedIds.add(first.id)
+      mainUsedNames.add(first.name)
     }
   }
 
@@ -299,24 +349,33 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
 
   const actualMainTime = mainTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
 
-  // 마무리 운동 선택 - 반드시 생성, 시간에 맞춰서
+  // ========== 마무리 운동 선택 ==========
+  // 준비운동과 메인 운동에서 사용된 운동은 절대 사용하지 않음
   remainingTime = cooldownDuration
   const cooldownTemplates: any[] = []
   const cooldownCandidates = shuffleArray(
-    getAvailableTemplates(usedTemplateIds, usedExerciseNames)
+    getAvailableTemplates(usedTemplateIds, usedExerciseNames, cooldownUsedIds, cooldownUsedNames)
       .filter((t) => t.duration_minutes <= 15) // 마무리 운동은 15분 이하
       .sort((a, b) => a.duration_minutes - b.duration_minutes)
   )
 
   // 마무리 운동: 목표 시간에 맞춰서 선택 (최소 2개)
+  // 준비운동과 메인 운동에서 사용된 운동은 절대 포함하지 않음
   for (const template of cooldownCandidates) {
     if (remainingTime <= 0 && cooldownTemplates.length >= 2) break
     if (cooldownTemplates.length >= 5) break
+    
+    // 세션 내 중복 체크
+    if (cooldownUsedIds.has(template.id) || cooldownUsedNames.has(template.name)) {
+      continue
+    }
     
     if (template.duration_minutes <= remainingTime || cooldownTemplates.length < 2) {
       cooldownTemplates.push(template)
       usedTemplateIds.add(template.id)
       usedExerciseNames.add(template.name)
+      cooldownUsedIds.add(template.id)
+      cooldownUsedNames.add(template.name)
       if (remainingTime > 0) {
         remainingTime -= template.duration_minutes
       }
@@ -326,12 +385,19 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   // 최소 2개는 반드시 보장
   if (cooldownTemplates.length < 2) {
     const additional = cooldownCandidates
-      .filter((t) => !usedTemplateIds.has(t.id))
+      .filter((t) => 
+        !usedTemplateIds.has(t.id) && 
+        !usedExerciseNames.has(t.name) &&
+        !cooldownUsedIds.has(t.id) &&
+        !cooldownUsedNames.has(t.name)
+      )
       .slice(0, 2 - cooldownTemplates.length)
     cooldownTemplates.push(...additional)
     additional.forEach(t => {
       usedTemplateIds.add(t.id)
       usedExerciseNames.add(t.name)
+      cooldownUsedIds.add(t.id)
+      cooldownUsedNames.add(t.name)
     })
   }
 
@@ -405,15 +471,80 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     }
   }
   
-  // 검증: 중복 확인
+  // 검증: 절대 중복 없음 확인
   const exerciseNames = exercises.map(e => e.exercise_name)
+  const exerciseIds = exercises.map(e => e.exercise_template_id)
   const uniqueNames = new Set(exerciseNames)
-  if (exerciseNames.length !== uniqueNames.size) {
-    console.error('중복된 운동이 발견되었습니다!', {
+  const uniqueIds = new Set(exerciseIds)
+  
+  // 세션별 중복 확인
+  const warmupNames = exercises.filter(e => e.section === 'warmup').map(e => e.exercise_name)
+  const mainNames = exercises.filter(e => e.section === 'main').map(e => e.exercise_name)
+  const cooldownNames = exercises.filter(e => e.section === 'cooldown').map(e => e.exercise_name)
+  
+  const warmupUnique = new Set(warmupNames)
+  const mainUnique = new Set(mainNames)
+  const cooldownUnique = new Set(cooldownNames)
+  
+  // 전체 중복 확인
+  if (exerciseNames.length !== uniqueNames.size || exerciseIds.length !== uniqueIds.size) {
+    console.error('❌ 전체 중복된 운동이 발견되었습니다!', {
       total: exerciseNames.length,
-      unique: uniqueNames.size,
+      uniqueNames: uniqueNames.size,
+      uniqueIds: uniqueIds.size,
       duplicates: exerciseNames.filter((name, index) => exerciseNames.indexOf(name) !== index)
     })
+  }
+  
+  // 세션별 중복 확인
+  if (warmupNames.length !== warmupUnique.size) {
+    console.error('❌ 준비운동 세션 내 중복 발견!', {
+      total: warmupNames.length,
+      unique: warmupUnique.size,
+      duplicates: warmupNames.filter((name, index) => warmupNames.indexOf(name) !== index)
+    })
+  }
+  
+  if (mainNames.length !== mainUnique.size) {
+    console.error('❌ 메인 운동 세션 내 중복 발견!', {
+      total: mainNames.length,
+      unique: mainUnique.size,
+      duplicates: mainNames.filter((name, index) => mainNames.indexOf(name) !== index)
+    })
+  }
+  
+  if (cooldownNames.length !== cooldownUnique.size) {
+    console.error('❌ 마무리 운동 세션 내 중복 발견!', {
+      total: cooldownNames.length,
+      unique: cooldownUnique.size,
+      duplicates: cooldownNames.filter((name, index) => cooldownNames.indexOf(name) !== index)
+    })
+  }
+  
+  // 세션 간 중복 확인
+  const warmupInMain = warmupNames.filter(name => mainNames.includes(name))
+  const warmupInCooldown = warmupNames.filter(name => cooldownNames.includes(name))
+  const mainInCooldown = mainNames.filter(name => cooldownNames.includes(name))
+  
+  if (warmupInMain.length > 0) {
+    console.error('❌ 준비운동이 메인 운동에 중복!', warmupInMain)
+  }
+  if (warmupInCooldown.length > 0) {
+    console.error('❌ 준비운동이 마무리 운동에 중복!', warmupInCooldown)
+  }
+  if (mainInCooldown.length > 0) {
+    console.error('❌ 메인 운동이 마무리 운동에 중복!', mainInCooldown)
+  }
+  
+  // 성공 로그
+  if (exerciseNames.length === uniqueNames.size && 
+      warmupNames.length === warmupUnique.size &&
+      mainNames.length === mainUnique.size &&
+      cooldownNames.length === cooldownUnique.size &&
+      warmupInMain.length === 0 &&
+      warmupInCooldown.length === 0 &&
+      mainInCooldown.length === 0) {
+    console.log('✅ 모든 세션에서 중복 없음 확인!')
   }
 
   // 운동 저장
