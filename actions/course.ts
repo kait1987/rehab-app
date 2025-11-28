@@ -37,7 +37,7 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     query = query.in("experience_level", ["초보", "중급"])
   }
 
-  const { data: templates, error: templateError } = await query
+  let { data: templates, error: templateError } = await query
 
   if (templateError) {
     console.error('운동 템플릿 조회 오류:', templateError)
@@ -65,9 +65,9 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     
     if (addResult.success && addResult.added > 0) {
       // 다시 템플릿 조회
-      const { data: newTemplates } = await query
-      if (newTemplates && newTemplates.length > 0) {
-        templates = newTemplates
+      const result = await query
+      if (result.data && result.data.length > 0) {
+        templates = result.data
       }
     }
   }
