@@ -30,26 +30,39 @@ export function KakaoMap({ center, gyms, onGymClick, className }: KakaoMapProps)
 
     console.log('Kakao Map 로딩 시작:', { center, apiKey: apiKey.substring(0, 10) + '...' })
 
-    loadKakaoMapScript(apiKey)
-      .then(() => {
-        if (!mapRef.current) {
-          console.error('mapRef.current is null')
-          setError("지도 컨테이너를 찾을 수 없습니다.")
-          setIsLoading(false)
-          return
-        }
+    const initializeMap = () => {
+      // mapRef가 준비될 때까지 대기
+      if (!mapRef.current) {
+        // 다음 프레임에서 다시 시도
+        requestAnimationFrame(() => {
+          setTimeout(initializeMap, 100)
+        })
+        return
+      }
 
-        console.log('Kakao Map 스크립트 로드 완료, 지도 생성 중...')
+      console.log('Kakao Map 스크립트 로드 완료, 지도 생성 중...')
 
-        const mapOption = {
-          center: new window.kakao.maps.LatLng(center.lat, center.lng),
-          level: 4, // Zoom level
-        }
+      const mapOption = {
+        center: new window.kakao.maps.LatLng(center.lat, center.lng),
+        level: 4, // Zoom level
+      }
 
+      try {
         const kakaoMap = new window.kakao.maps.Map(mapRef.current, mapOption)
         console.log('Kakao Map 생성 완료:', kakaoMap)
         setMap(kakaoMap)
         setIsLoading(false)
+      } catch (err) {
+        console.error('지도 생성 실패:', err)
+        setError("지도를 생성하는 중 오류가 발생했습니다.")
+        setIsLoading(false)
+      }
+    }
+
+    loadKakaoMapScript(apiKey)
+      .then(() => {
+        // DOM이 준비될 때까지 약간의 지연 후 지도 초기화
+        setTimeout(initializeMap, 100)
       })
       .catch((err) => {
         console.error('Kakao Map 로드 실패:', err)
@@ -107,58 +120,65 @@ export function KakaoMap({ center, gyms, onGymClick, className }: KakaoMapProps)
     }
   }, [map, gyms, onGymClick])
 
-  if (error) {
-    return (
-      <div className={`flex items-center justify-center bg-[#1A1B1D] ${className}`}>
-        <div className="text-center p-8">
-          <p className="text-red-400 mb-2 font-semibold">{error}</p>
-          <p className="text-sm text-gray-400 mb-4">지도를 불러올 수 없습니다</p>
-          <Button
-            variant="outline"
-            onClick={() => {
-              setError(null)
-              setIsLoading(true)
-              const apiKey = process.env.NEXT_PUBLIC_KAKAO_MAP_API_KEY
-              if (apiKey) {
-                loadKakaoMapScript(apiKey)
-                  .then(() => {
-                    if (!mapRef.current) return
-                    const mapOption = {
-                      center: new window.kakao.maps.LatLng(center.lat, center.lng),
-                      level: 4,
-                    }
-                    const kakaoMap = new window.kakao.maps.Map(mapRef.current, mapOption)
-                    setMap(kakaoMap)
-                    setIsLoading(false)
-                  })
-                  .catch((err) => {
-                    console.error('지도 로드 재시도 실패:', err)
-                    setError(err.message)
-                    setIsLoading(false)
-                  })
-              } else {
-                setError('Kakao Map API 키가 설정되지 않았습니다.')
-                setIsLoading(false)
-              }
-            }}
-            className="min-h-[44px]"
-          >
-            다시 시도
-          </Button>
+  return (
+    <div className={`relative ${className}`} style={{ width: "100%", height: "100%" }}>
+      {/* 지도 컨테이너 - 항상 렌더링 */}
+      <div id="map" ref={mapRef} className="w-full h-full" style={{ width: "100%", height: "100%" }} />
+      
+      {/* 로딩 오버레이 */}
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#1A1B1D] bg-opacity-90 z-10">
+          <div className="text-center">
+            <p className="text-gray-400">지도를 불러오는 중...</p>
+          </div>
         </div>
-      </div>
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <div className={`flex items-center justify-center bg-[#1A1B1D] ${className}`}>
-        <div className="text-center">
-          <p className="text-gray-400">지도를 불러오는 중...</p>
+      )}
+      
+      {/* 에러 오버레이 */}
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#1A1B1D] bg-opacity-95 z-10">
+          <div className="text-center p-8">
+            <p className="text-red-400 mb-2 font-semibold">{error}</p>
+            <p className="text-sm text-gray-400 mb-4">지도를 불러올 수 없습니다</p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setError(null)
+                setIsLoading(true)
+                const apiKey = process.env.NEXT_PUBLIC_KAKAO_MAP_API_KEY
+                if (apiKey) {
+                  loadKakaoMapScript(apiKey)
+                    .then(() => {
+                      if (!mapRef.current) {
+                        setError("지도 컨테이너를 찾을 수 없습니다.")
+                        setIsLoading(false)
+                        return
+                      }
+                      const mapOption = {
+                        center: new window.kakao.maps.LatLng(center.lat, center.lng),
+                        level: 4,
+                      }
+                      const kakaoMap = new window.kakao.maps.Map(mapRef.current, mapOption)
+                      setMap(kakaoMap)
+                      setIsLoading(false)
+                    })
+                    .catch((err) => {
+                      console.error('지도 로드 재시도 실패:', err)
+                      setError(err.message)
+                      setIsLoading(false)
+                    })
+                } else {
+                  setError('Kakao Map API 키가 설정되지 않았습니다.')
+                  setIsLoading(false)
+                }
+              }}
+              className="min-h-[44px]"
+            >
+              다시 시도
+            </Button>
+          </div>
         </div>
-      </div>
-    )
-  }
-
-  return <div id="map" ref={mapRef} className={className} style={{ width: "100%", height: "100%" }} />
+      )}
+    </div>
+  )
 }
