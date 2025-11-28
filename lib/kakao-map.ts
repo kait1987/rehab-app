@@ -2,6 +2,7 @@
 
 export function loadKakaoMapScript(apiKey: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    // 이미 로드되어 있으면 즉시 resolve
     if (window.kakao && window.kakao.maps) {
       resolve()
       return
@@ -11,32 +12,45 @@ export function loadKakaoMapScript(apiKey: string): Promise<void> {
     const existingScript = document.getElementById(scriptId)
 
     if (existingScript) {
-      // If script exists but not loaded, just wait a bit and resolve
-      // This is a simplification to avoid complex race conditions
+      // 스크립트가 이미 있지만 아직 로드되지 않은 경우
+      // 스크립트의 onload 이벤트를 기다림
+      const checkInterval = setInterval(() => {
+        if (window.kakao && window.kakao.maps) {
+          clearInterval(checkInterval)
+          resolve()
+        }
+      }, 100)
+
+      // 최대 10초 대기
       setTimeout(() => {
+        clearInterval(checkInterval)
         if (window.kakao && window.kakao.maps) {
           resolve()
         } else {
-          reject(new Error('Kakao Map script not loaded yet'))
+          reject(new Error('Kakao Map script not loaded yet. Please check your API key and domain settings.'))
         }
-      }, 1000)
+      }, 10000)
       return
     }
 
+    // 새 스크립트 생성
     const script = document.createElement('script')
     script.id = scriptId
-    // Use HTTPS and autoload=false
     script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&autoload=false`
     script.async = true
 
     script.onload = () => {
-      window.kakao.maps.load(() => {
-        resolve()
-      })
+      if (window.kakao && window.kakao.maps) {
+        window.kakao.maps.load(() => {
+          resolve()
+        })
+      } else {
+        reject(new Error('Kakao Map API failed to initialize'))
+      }
     }
 
     script.onerror = () => {
-      reject(new Error('Failed to load Kakao Map script'))
+      reject(new Error('Failed to load Kakao Map script. Please check your API key and domain settings in Kakao Developer Console.'))
     }
 
     document.head.appendChild(script)

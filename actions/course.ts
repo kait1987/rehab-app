@@ -169,12 +169,15 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   let warmupTime = 0
   let mainTime = 0
   let cooldownTime = 0
+  const usedTemplateIds = new Set<string>() // 이미 사용된 템플릿 ID 추적
 
-  // 준비운동 (스트레칭 위주)
+  // 준비운동 (스트레칭 위주, 5분 이하 우선)
   const warmupTemplates = finalTemplates
-    .filter((t) => t.duration_minutes <= 10)
+    .filter((t) => !usedTemplateIds.has(t.id) && t.duration_minutes <= 10)
+    .sort((a, b) => a.duration_minutes - b.duration_minutes) // 짧은 것부터
     .slice(0, 3)
   warmupTemplates.forEach((template, index) => {
+    usedTemplateIds.add(template.id) // 사용된 템플릿 ID 추가
     exercises.push({
       course_id: course.id,
       exercise_template_id: template.id,
@@ -186,11 +189,13 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     warmupTime += template.duration_minutes
   })
 
-  // 메인 운동
+  // 메인 운동 (10분 이상, 강도 높은 운동)
   const mainTemplates = finalTemplates
-    .filter((t) => t.duration_minutes >= 10)
+    .filter((t) => !usedTemplateIds.has(t.id) && t.duration_minutes >= 10)
+    .sort((a, b) => b.duration_minutes - a.duration_minutes) // 긴 것부터
     .slice(0, Math.floor(mainDuration / 15)) // 15분당 1개 운동
   mainTemplates.forEach((template, index) => {
+    usedTemplateIds.add(template.id) // 사용된 템플릿 ID 추가
     exercises.push({
       course_id: course.id,
       exercise_template_id: template.id,
@@ -205,11 +210,13 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     mainTime += template.duration_minutes
   })
 
-  // 마무리 스트레칭
+  // 마무리 스트레칭 (5-10분, 준비운동과 다른 운동)
   const cooldownTemplates = finalTemplates
-    .filter((t) => t.duration_minutes <= 10)
+    .filter((t) => !usedTemplateIds.has(t.id) && t.duration_minutes <= 10)
+    .sort((a, b) => a.duration_minutes - b.duration_minutes) // 짧은 것부터
     .slice(0, 2)
   cooldownTemplates.forEach((template, index) => {
+    usedTemplateIds.add(template.id) // 사용된 템플릿 ID 추가
     exercises.push({
       course_id: course.id,
       exercise_template_id: template.id,
