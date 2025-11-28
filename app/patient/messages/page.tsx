@@ -81,7 +81,7 @@ export default async function MessagesPage({
               {therapist ? (
                 <div className="space-y-2">
                   <Link
-                    href={`/messages?userId=${therapistId}`}
+                    href={`/patient/messages?userId=${therapistId}`}
                     className={`block p-3 rounded-lg border ${
                       selectedUserId === therapistId
                         ? "bg-blue-50 border-blue-200"

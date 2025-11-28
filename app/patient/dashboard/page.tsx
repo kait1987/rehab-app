@@ -138,7 +138,7 @@ export default async function PatientDashboard() {
             </CardHeader>
             <CardContent>
               <Button asChild variant="outline" className="w-full">
-                <Link href="/messages">메시지 보기</Link>
+                <Link href="/patient/messages">메시지 보기</Link>
               </Button>
             </CardContent>
           </Card>

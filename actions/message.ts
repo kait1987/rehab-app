@@ -63,7 +63,7 @@ export async function sendMessage(formData: {
     return { error: error.message }
   }
 
-  revalidatePath("/messages")
+  revalidatePath("/patient/messages")
   revalidatePath("/therapist/messages")
   return { success: true, data }
 }
@@ -129,7 +129,7 @@ export async function markAsRead(messageId: string) {
     return { error: error.message }
   }
 
-  revalidatePath("/messages")
+  revalidatePath("/patient/messages")
   revalidatePath("/therapist/messages")
   return { success: true }
 }
