@@ -219,6 +219,20 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   const warmupDuration = Math.floor(totalDuration * 0.15) // 15%
   const mainDuration = Math.floor(totalDuration * 0.65) // 65%
   const cooldownDuration = totalDuration - warmupDuration - mainDuration // 20%
+  
+  console.log('시간 배분:', {
+    totalDuration,
+    warmupDuration,
+    mainDuration,
+    cooldownDuration,
+    sum: warmupDuration + mainDuration + cooldownDuration
+  })
+  
+  // 메인 운동 시간이 0이면 최소 1분은 보장
+  const actualMainDuration = mainDuration > 0 ? mainDuration : 1
+  if (mainDuration === 0) {
+    console.warn('⚠️ 메인 운동 시간이 0분입니다. 최소 1분으로 조정합니다.')
+  }
 
   // 실제 운동 배정 후 시간 계산 (임시로 예상 시간 사용)
   const { data: course, error: courseError } = await supabase
@@ -448,13 +462,16 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
 
   // ========== 메인 운동 세션 선택 ==========
   // 메인 운동: 강도 높은 운동, 준비운동과 절대 중복 없음
-  remainingTime = mainDuration
+  remainingTime = actualMainDuration // 조정된 메인 운동 시간 사용
   const mainTemplates: any[] = []
   
   console.log('메인 운동 선택 시작:', {
     mainDuration,
+    actualMainDuration,
+    remainingTime,
     availableCount: getAvailableTemplates(mainUsedIds, mainUsedNames).length,
-    usedInWarmup: allUsedTemplateIds.size
+    usedInWarmup: allUsedTemplateIds.size,
+    warmupExercises: warmupTemplates.map(t => t.name)
   })
 
   // 단계별로 메인 운동 후보 확보 (점진적 필터 완화)
@@ -510,25 +527,40 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
 
   // 메인 운동 선택: 시간에 맞춰서 선택, 최소 1개는 반드시 보장
   let mainSelectedCount = 0
+  console.log('메인 운동 선택 루프 시작:', {
+    candidatesCount: mainCandidates.length,
+    remainingTime,
+    mainDuration
+  })
+  
   for (const template of mainCandidates) {
     // 최대 10개까지 선택 가능
-    if (mainSelectedCount >= 10) break
+    if (mainSelectedCount >= 10) {
+      console.log('메인 운동 최대 개수 도달 (10개)')
+      break
+    }
     
     // 중복 체크 (이중 확인)
     if (allUsedTemplateIds.has(template.id) || allUsedExerciseNames.has(template.name)) {
+      console.log(`메인 운동 후보 스킵 (이미 사용됨): ${template.name}`)
       continue // 이미 다른 세션에서 사용됨
     }
     if (mainUsedIds.has(template.id) || mainUsedNames.has(template.name)) {
+      console.log(`메인 운동 후보 스킵 (세션 내 중복): ${template.name}`)
       continue // 이미 이 세션에서 사용됨
     }
     
     // 시간 체크: 시간이 남았거나 아직 선택된 운동이 없으면 추가
+    // remainingTime이 0이어도 최소 1개는 반드시 선택해야 함
     const canAdd = remainingTime > 0 || mainTemplates.length === 0
     
     if (canAdd) {
+      console.log(`메인 운동 추가 시도: ${template.name} (시간: ${template.duration_minutes}분, 남은 시간: ${remainingTime}분)`)
+      
       if (addExercise(template, 'main', mainUsedIds, mainUsedNames, mainTemplates.length)) {
         mainTemplates.push(template)
         mainSelectedCount++
+        console.log(`✅ 메인 운동 추가 성공: ${template.name}`)
         
         // 시간이 남아있으면 시간 차감
         if (remainingTime > 0) {
@@ -536,24 +568,53 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
         }
         
         // 시간이 충분히 채워졌고 최소 1개 이상이면 종료 가능
-        if (mainTemplates.length >= 1 && remainingTime <= 0) {
-          // 하지만 최소 2-3개는 확보하려고 시도
-          if (mainTemplates.length < 2 && mainCandidates.length > mainSelectedCount) {
+        // 하지만 remainingTime이 0이어도 최소 1개는 확보해야 하므로 조건 수정
+        if (mainTemplates.length >= 1) {
+          // 시간이 남아있고 후보가 더 있으면 계속 선택 시도
+          if (remainingTime > 0 && mainCandidates.length > mainSelectedCount) {
             continue // 더 선택 시도
           }
-          break
+          // 시간이 없거나 후보가 없으면 종료
+          if (remainingTime <= 0 || mainCandidates.length <= mainSelectedCount) {
+            console.log('메인 운동 선택 완료 (시간 소진 또는 후보 소진)')
+            break
+          }
         }
+      } else {
+        console.log(`❌ 메인 운동 추가 실패: ${template.name} (addExercise 반환 false)`)
       }
+    } else {
+      console.log(`메인 운동 추가 불가: ${template.name} (canAdd=false, remainingTime=${remainingTime}, mainTemplates.length=${mainTemplates.length})`)
     }
   }
 
   // 최소 1개는 반드시 보장 (시간과 관계없이)
   if (mainTemplates.length === 0) {
     console.warn('⚠️ 메인 운동이 선택되지 않아 강제로 추가 시도')
+    console.log('강제 추가 시도 - 사용 가능한 템플릿 확인:', {
+      allUsedCount: allUsedTemplateIds.size,
+      finalTemplatesCount: finalTemplates.length,
+      availableFromGetAvailable: getAvailableTemplates(mainUsedIds, mainUsedNames).length
+    })
     
-    // 모든 사용 가능한 운동에서 찾기 (필터 없이)
-    const allAvailable = getAvailableTemplates(mainUsedIds, mainUsedNames)
-    const fallbackCandidates = shuffleArray(allAvailable)
+    // 1차 시도: getAvailableTemplates 사용
+    let allAvailable = getAvailableTemplates(mainUsedIds, mainUsedNames)
+    let fallbackCandidates = shuffleArray(allAvailable)
+    
+    // 2차 시도: getAvailableTemplates가 빈 배열이면 finalTemplates에서 직접 필터링
+    if (fallbackCandidates.length === 0) {
+      console.warn('getAvailableTemplates가 빈 배열 반환, finalTemplates에서 직접 필터링')
+      fallbackCandidates = shuffleArray(
+        finalTemplates.filter((t) => 
+          !allUsedTemplateIds.has(t.id) && 
+          !allUsedExerciseNames.has(t.name) &&
+          !mainUsedIds.has(t.id) &&
+          !mainUsedNames.has(t.name)
+        )
+      )
+    }
+    
+    console.log(`강제 추가 후보: ${fallbackCandidates.length}개`)
     
     for (const template of fallbackCandidates) {
       if (mainTemplates.length >= 1) break
@@ -566,9 +627,49 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
         continue
       }
       
+      console.log(`강제 추가 시도: ${template.name}`)
       if (addExercise(template, 'main', mainUsedIds, mainUsedNames, 0)) {
         mainTemplates.push(template)
-        console.log(`✅ 메인 운동 강제 추가: ${template.name}`)
+        console.log(`✅ 메인 운동 강제 추가 성공: ${template.name}`)
+        break
+      } else {
+        console.log(`❌ 메인 운동 강제 추가 실패: ${template.name}`)
+      }
+    }
+    
+    // 3차 시도: 여전히 없으면 중복 체크를 완화하여 추가
+    if (mainTemplates.length === 0) {
+      console.warn('⚠️ 2차 시도도 실패, 중복 체크 완화하여 추가 시도')
+      for (const template of shuffleArray(finalTemplates)) {
+        if (mainTemplates.length >= 1) break
+        
+        // 세션 내 중복만 피하고, 다른 세션과의 중복은 허용
+        if (mainUsedIds.has(template.id) || mainUsedNames.has(template.name)) {
+          continue
+        }
+        
+        console.log(`강제 추가 시도 (중복 완화): ${template.name}`)
+        // addExercise 대신 직접 추가
+        allUsedTemplateIds.add(template.id)
+        allUsedExerciseNames.add(template.name)
+        mainUsedIds.add(template.id)
+        mainUsedNames.add(template.name)
+        
+        const exerciseData: any = {
+          course_id: course.id,
+          exercise_template_id: template.id,
+          exercise_name: template.name,
+          section: "main",
+          sets: 3,
+          reps: 10,
+          duration_seconds: template.duration_minutes * 60,
+          rest_seconds: 60,
+          order_index: 0,
+        }
+        
+        exercises.push(exerciseData)
+        mainTemplates.push(template)
+        console.log(`✅ 메인 운동 강제 추가 성공 (중복 완화): ${template.name}`)
         break
       }
     }
