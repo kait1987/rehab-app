@@ -39,101 +39,57 @@ export function KakaoMap({ center, gyms, onGymClick, className }: KakaoMapProps)
       return
     }
 
-    console.log('Kakao Map 로딩 시작:', { 
-      center, 
-      apiKeyPrefix: apiKey.substring(0, 10) + '...',
-      domain: window.location.origin 
-    })
-
-    let retryCount = 0
-    const maxRetries = 3
+    // console.log('Kakao Map 로딩 시작')
 
     const initializeMap = () => {
-      // mapRef가 준비될 때까지 대기
-      if (!mapRef.current) {
-        retryCount++
-        if (retryCount < 20) { // 최대 2초 대기
-          requestAnimationFrame(() => {
-            setTimeout(initializeMap, 100)
-          })
-        } else {
-          setError("지도 컨테이너를 찾을 수 없습니다. 페이지를 새로고침하세요.")
-          setIsLoading(false)
-        }
-        return
-      }
+      if (!mapRef.current) return
 
       // kakao 객체 확인
       if (!window.kakao || !window.kakao.maps) {
-        console.error('Kakao Map API가 로드되지 않았습니다.')
         setError("Kakao Map API가 로드되지 않았습니다. 페이지를 새로고침하세요.")
         setIsLoading(false)
         return
       }
 
-      console.log('Kakao Map 스크립트 로드 완료, 지도 생성 중...')
+      // maps.load를 사용하여 안전하게 초기화
+      window.kakao.maps.load(() => {
+        if (!mapRef.current) return
 
-      const mapOption = {
-        center: new window.kakao.maps.LatLng(center.lat, center.lng),
-        level: 4, // Zoom level
-      }
+        const mapOption = {
+          center: new window.kakao.maps.LatLng(center.lat, center.lng),
+          level: 4, // Zoom level
+        }
 
-      try {
-        const kakaoMap = new window.kakao.maps.Map(mapRef.current, mapOption)
-        console.log('Kakao Map 생성 완료:', kakaoMap)
-        setMap(kakaoMap)
-        setIsLoading(false)
-        setError(null) // 성공 시 에러 초기화
-      } catch (err: any) {
-        console.error('지도 생성 실패:', err)
-        setError(
-          `지도를 생성하는 중 오류가 발생했습니다.\n` +
-          `오류: ${err?.message || '알 수 없는 오류'}\n` +
-          `도메인이 카카오 개발자 콘솔에 등록되어 있는지 확인하세요.`
-        )
-        setIsLoading(false)
-      }
+        try {
+          const kakaoMap = new window.kakao.maps.Map(mapRef.current, mapOption)
+          setMap(kakaoMap)
+          setIsLoading(false)
+          setError(null)
+        } catch (err: any) {
+          console.error('지도 생성 실패:', err)
+          setError(
+            `지도를 생성하는 중 오류가 발생했습니다.\n` +
+            `오류: ${err?.message || '알 수 없는 오류'}\n` +
+            `도메인이 카카오 개발자 콘솔에 등록되어 있는지 확인하세요.`
+          )
+          setIsLoading(false)
+        }
+      })
     }
 
-    const loadMap = (attempt: number = 1) => {
-      loadKakaoMapScript(apiKey)
-        .then(() => {
-          // DOM이 준비될 때까지 약간의 지연 후 지도 초기화
-          setTimeout(initializeMap, 100)
-        })
-        .catch((err) => {
-          console.error(`Kakao Map 로드 실패 (시도 ${attempt}/${maxRetries}):`, err)
-          
-          if (attempt < maxRetries) {
-            // 재시도
-            console.log(`${2 * attempt}초 후 재시도...`)
-            setTimeout(() => {
-              loadMap(attempt + 1)
-            }, 2000 * attempt)
-          } else {
-            // 최종 실패
-            const currentDomain = window.location.origin
-            setError(
-              `${err.message || "지도를 불러오는 중 오류가 발생했습니다."}\n\n` +
-              `해결 방법:\n` +
-              `1. 카카오 개발자 콘솔(https://developers.kakao.com) 접속\n` +
-              `2. 내 애플리케이션 → 앱 설정 → 플랫폼\n` +
-              `3. Web 플랫폼에 "${currentDomain}" 추가\n` +
-              `4. Vercel 환경 변수에 NEXT_PUBLIC_KAKAO_MAP_API_KEY 확인`
-            )
-            setIsLoading(false)
-          }
-        })
-    }
-
-    loadMap()
+    loadKakaoMapScript(apiKey)
+      .then(() => {
+        initializeMap()
+      })
+      .catch((err) => {
+        console.error('Kakao Map 로드 실패:', err)
+        setError(err.message || "지도를 불러오는 중 오류가 발생했습니다.")
+        setIsLoading(false)
+      })
 
     // 클린업 함수
     return () => {
       // 컴포넌트 언마운트 시 정리
-      if (map) {
-        // 지도 인스턴스는 자동으로 정리됨
-      }
     }
   }, [center.lat, center.lng])
 

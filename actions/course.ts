@@ -392,43 +392,29 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     ...shuffleArray(recentWarmup)
   ]
 
-  // 준비운동 선택: 시간에 맞춰서, 최소 2개는 반드시 보장
-  let warmupSelectedCount = 0
-  const warmupTargetTime = warmupDuration // 목표 시간
-  
+  // 준비운동 선택: 목표 시간에 맞춰서, 최소 2개는 반드시 보장
   for (const template of warmupCandidates) {
-    // 최대 8개까지 선택 가능 (시간 맞추기 위해 증가)
-    if (warmupSelectedCount >= 8) break
     
-    // 중복 체크 (이중 확인)
+    // 중복 체크
     if (allUsedTemplateIds.has(template.id) || allUsedExerciseNames.has(template.name)) {
-      continue // 이미 다른 세션에서 사용됨
+      continue
     }
     if (warmupUsedIds.has(template.id) || warmupUsedNames.has(template.name)) {
-      continue // 이미 이 세션에서 사용됨
+      continue
     }
     
     // 현재까지 선택된 운동의 시간 합계
     const currentTotalTime = warmupTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+    const newTotalTime = currentTotalTime + template.duration_minutes
     
-    // 시간 체크: 목표 시간에 맞춰서 선택
-    // 최소 2개는 시간과 관계없이 추가, 그 이후는 시간에 맞춰서
-    const canAdd = warmupTemplates.length < 2 || (currentTotalTime + template.duration_minutes <= warmupTargetTime * 1.2) // 20% 여유
+    // 시간 체크: 목표 시간을 넘지 않으면 추가 가능
+    // 최소 2개는 시간과 관계없이 추가
+    const canAdd = warmupTemplates.length < 2 || (newTotalTime <= warmupDuration)
     
     if (canAdd) {
       if (addExercise(template, 'warmup', warmupUsedIds, warmupUsedNames, warmupTemplates.length)) {
         warmupTemplates.push(template)
-        warmupSelectedCount++
-        
-        // 시간 차감
         remainingTime = Math.max(0, remainingTime - template.duration_minutes)
-        
-        // 목표 시간에 가까워지면 종료 (최소 2개는 보장)
-        const newTotalTime = warmupTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
-        if (warmupTemplates.length >= 2 && newTotalTime >= warmupTargetTime * 0.8) {
-          // 목표 시간의 80% 이상이면 종료 가능
-          break
-        }
       }
     }
   }
@@ -532,7 +518,6 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   })
 
   // 메인 운동 선택: 시간에 맞춰서 선택, 최소 1개는 반드시 보장
-  let mainSelectedCount = 0
   const mainTargetTime = actualMainDuration // 목표 시간
   console.log('메인 운동 선택 루프 시작:', {
     candidatesCount: mainCandidates.length,
@@ -542,11 +527,6 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   })
   
   for (const template of mainCandidates) {
-    // 최대 15개까지 선택 가능 (시간 맞추기 위해 증가)
-    if (mainSelectedCount >= 15) {
-      console.log('메인 운동 최대 개수 도달 (15개)')
-      break
-    }
     
     // 중복 체크 (이중 확인)
     if (allUsedTemplateIds.has(template.id) || allUsedExerciseNames.has(template.name)) {
@@ -560,34 +540,17 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     
     // 현재까지 선택된 운동의 시간 합계
     const currentTotalTime = mainTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+    const newTotalTime = currentTotalTime + template.duration_minutes
     
-    // 시간 체크: 목표 시간에 맞춰서 선택
-    // 최소 1개는 시간과 관계없이 추가, 그 이후는 시간에 맞춰서
-    const canAdd = mainTemplates.length === 0 || (currentTotalTime + template.duration_minutes <= mainTargetTime * 1.2) // 20% 여유
+    // 시간 체크: 목표 시간을 넘지 않으면 추가 가능
+    // 최소 1개는 시간과 관계없이 추가
+    const canAdd = mainTemplates.length === 0 || (newTotalTime <= mainTargetTime)
     
     if (canAdd) {
-      console.log(`메인 운동 추가 시도: ${template.name} (시간: ${template.duration_minutes}분, 현재 합계: ${currentTotalTime}분, 목표: ${mainTargetTime}분)`)
-      
       if (addExercise(template, 'main', mainUsedIds, mainUsedNames, mainTemplates.length)) {
         mainTemplates.push(template)
-        mainSelectedCount++
-        console.log(`✅ 메인 운동 추가 성공: ${template.name}`)
-        
-        // 시간 차감
         remainingTime = Math.max(0, remainingTime - template.duration_minutes)
-        
-        // 목표 시간에 가까워지면 종료 (최소 1개는 보장)
-        const newTotalTime = mainTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
-        if (mainTemplates.length >= 1 && newTotalTime >= mainTargetTime * 0.8) {
-          // 목표 시간의 80% 이상이면 종료 가능
-          console.log(`메인 운동 선택 완료 (목표 시간의 ${Math.round((newTotalTime / mainTargetTime) * 100)}% 달성)`)
-          break
-        }
-      } else {
-        console.log(`❌ 메인 운동 추가 실패: ${template.name} (addExercise 반환 false)`)
       }
-    } else {
-      console.log(`메인 운동 추가 불가: ${template.name} (시간 초과 예상: ${currentTotalTime} + ${template.duration_minutes} > ${mainTargetTime * 1.2})`)
     }
   }
 
@@ -765,12 +728,9 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   ]
 
   // 마무리 운동 선택: 시간에 맞춰서, 최소 2개는 반드시 보장
-  let cooldownSelectedCount = 0
   const cooldownTargetTime = cooldownDuration // 목표 시간
   
   for (const template of cooldownCandidates) {
-    // 최대 8개까지 선택 가능 (시간 맞추기 위해 증가)
-    if (cooldownSelectedCount >= 8) break
     
     // 중복 체크 (이중 확인)
     if (allUsedTemplateIds.has(template.id) || allUsedExerciseNames.has(template.name)) {
@@ -782,25 +742,16 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     
     // 현재까지 선택된 운동의 시간 합계
     const currentTotalTime = cooldownTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+    const newTotalTime = currentTotalTime + template.duration_minutes
     
-    // 시간 체크: 목표 시간에 맞춰서 선택
-    // 최소 2개는 시간과 관계없이 추가, 그 이후는 시간에 맞춰서
-    const canAdd = cooldownTemplates.length < 2 || (currentTotalTime + template.duration_minutes <= cooldownTargetTime * 1.2) // 20% 여유
+    // 시간 체크: 목표 시간을 넘지 않으면 추가 가능
+    // 최소 2개는 시간과 관계없이 추가
+    const canAdd = cooldownTemplates.length < 2 || (newTotalTime <= cooldownTargetTime)
     
     if (canAdd) {
       if (addExercise(template, 'cooldown', cooldownUsedIds, cooldownUsedNames, cooldownTemplates.length)) {
         cooldownTemplates.push(template)
-        cooldownSelectedCount++
-        
-        // 시간 차감
         remainingTime = Math.max(0, remainingTime - template.duration_minutes)
-        
-        // 목표 시간에 가까워지면 종료 (최소 2개는 보장)
-        const newTotalTime = cooldownTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
-        if (cooldownTemplates.length >= 2 && newTotalTime >= cooldownTargetTime * 0.8) {
-          // 목표 시간의 80% 이상이면 종료 가능
-          break
-        }
       }
     }
   }
