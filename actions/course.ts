@@ -215,7 +215,7 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   const finalTemplates = filteredTemplates
 
   // 코스 생성
-  const totalDuration = questionnaire.duration || 90
+  const totalDuration = questionnaire.duration || 60
   const warmupDuration = Math.floor(totalDuration * 0.15) // 15%
   const mainDuration = Math.floor(totalDuration * 0.65) // 65%
   const cooldownDuration = totalDuration - warmupDuration - mainDuration // 20%
@@ -409,12 +409,18 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     
     // 시간 체크: 목표 시간을 넘지 않으면 추가 가능
     // 최소 2개는 시간과 관계없이 추가
-    const canAdd = warmupTemplates.length < 2 || (newTotalTime <= warmupDuration)
+    const canAdd = warmupTemplates.length < 2 || (newTotalTime <= warmupDuration * 1.2)
     
     if (canAdd) {
       if (addExercise(template, 'warmup', warmupUsedIds, warmupUsedNames, warmupTemplates.length)) {
         warmupTemplates.push(template)
         remainingTime = Math.max(0, remainingTime - template.duration_minutes)
+        
+        // 목표 시간 도달 시 종료
+        const finalTotalTime = warmupTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+        if (finalTotalTime >= warmupDuration) {
+          break
+        }
       }
     }
   }
@@ -544,12 +550,18 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     
     // 시간 체크: 목표 시간을 넘지 않으면 추가 가능
     // 최소 1개는 시간과 관계없이 추가
-    const canAdd = mainTemplates.length === 0 || (newTotalTime <= mainTargetTime)
+    const canAdd = mainTemplates.length === 0 || (newTotalTime <= mainTargetTime * 1.2)
     
     if (canAdd) {
       if (addExercise(template, 'main', mainUsedIds, mainUsedNames, mainTemplates.length)) {
         mainTemplates.push(template)
         remainingTime = Math.max(0, remainingTime - template.duration_minutes)
+        
+        // 목표 시간 도달 시 종료
+        const finalTotalTime = mainTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+        if (finalTotalTime >= mainTargetTime) {
+          break
+        }
       }
     }
   }
@@ -752,6 +764,12 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
       if (addExercise(template, 'cooldown', cooldownUsedIds, cooldownUsedNames, cooldownTemplates.length)) {
         cooldownTemplates.push(template)
         remainingTime = Math.max(0, remainingTime - template.duration_minutes)
+
+        // 목표 시간 도달 시 종료
+        const finalTotalTime = cooldownTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+        if (finalTotalTime >= cooldownDuration) {
+          break
+        }
       }
     }
   }
