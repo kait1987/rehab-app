@@ -15,6 +15,42 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
 
   const userId = user?.id || `anonymous_${Date.now()}`
 
+  // 최근 5개 코스 조회 (중복 방지용)
+  let recentlyUsedTemplateIds = new Set<string>()
+  if (user?.id) {
+    try {
+      const { data: recentCourses, error: historyError } = await supabase
+        .from("user_courses")
+        .select(`
+          id,
+          created_at,
+          course_exercises (
+            exercise_template_id
+          )
+        `)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(5)
+
+      if (historyError) {
+        console.warn('최근 코스 조회 실패 (무시됨):', historyError.message)
+      } else if (recentCourses && recentCourses.length > 0) {
+        recentCourses.forEach(course => {
+          if (course.course_exercises) {
+            course.course_exercises.forEach((ex: any) => {
+              if (ex.exercise_template_id) {
+                recentlyUsedTemplateIds.add(ex.exercise_template_id)
+              }
+            })
+          }
+        })
+        console.log(`최근 ${recentCourses.length}개 코스에서 사용된 운동 ${recentlyUsedTemplateIds.size}개 식별됨`)
+      }
+    } catch (err) {
+      console.warn('최근 코스 조회 중 예외 발생 (무시됨):', err)
+    }
+  }
+
   // 운동 템플릿 가져오기
   let query = supabase
     .from("exercise_templates")
@@ -69,6 +105,28 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
       if (result.data && result.data.length > 0) {
         templates = result.data
       }
+    }
+  }
+
+  // 스트레칭 운동 부족 시 자동 크롤링 트리거 (마무리 운동용)
+  const stretchingKeywords = ['스트레칭', '이완', '마사지', '풀기', '호흡', '요가', 'Stretching', 'Yoga', 'Pose', 'Stretch']
+  const stretchingExercises = templates?.filter((t: any) => 
+    stretchingKeywords.some(k => t.name.includes(k)) || 
+    t.name.includes('자세') || // 요가 자세 등
+    t.description?.includes('스트레칭') ||
+    t.description?.includes('이완')
+  ) || []
+
+  // 스트레칭 운동이 부족하면 즉시 크롤러 실행 후 대기
+  if (stretchingExercises.length < 5) {
+    console.log('스트레칭 운동 부족으로 자동 추가 시도 (강력 모드):', { count: stretchingExercises.length })
+    const { autoAddExerciseTemplates } = await import('./exercise-crawler')
+    await autoAddExerciseTemplates(questionnaire.bodyPart, questionnaire.painLevel)
+    
+    // 다시 조회 (크롤링 후 데이터 반영)
+    const result = await query
+    if (result.data && result.data.length > 0) {
+      templates = result.data
     }
   }
 
@@ -208,14 +266,24 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     return shuffled
   }
 
-  // 사용 가능한 템플릿 필터링 (절대 중복 없음 보장)
+  // 사용 가능한 템플릿 필터링 (절대 중복 없음 보장 + 최근 사용 운동 후순위 배치)
   const getAvailableTemplates = (excludeIds: Set<string>, excludeNames: Set<string>) => {
-    return finalTemplates.filter((t) => 
+    const available = finalTemplates.filter((t) => 
       !allUsedTemplateIds.has(t.id) &&      // 전체에서 사용되지 않음
       !allUsedExerciseNames.has(t.name) &&  // 전체에서 사용되지 않음
       !excludeIds.has(t.id) &&              // 현재 세션에서 사용되지 않음
       !excludeNames.has(t.name)             // 현재 세션에서 사용되지 않음
     )
+
+    // 우선순위 정렬: 최근에 사용되지 않은 운동을 앞으로
+    return available.sort((a, b) => {
+      const aUsed = recentlyUsedTemplateIds.has(a.id)
+      const bUsed = recentlyUsedTemplateIds.has(b.id)
+      
+      if (aUsed && !bUsed) return 1  // a는 사용됨, b는 안됨 -> b 우선
+      if (!aUsed && bUsed) return -1 // a는 안됨, b는 사용됨 -> a 우선
+      return 0 // 둘 다 같음 (랜덤 셔플은 호출 측에서 처리)
+    })
   }
 
   // 운동 추가 함수 (중복 체크 후 추가)
@@ -270,11 +338,28 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   const warmupTemplates: any[] = []
   
   // 사용 가능한 준비운동 후보 (절대 중복 없음)
-  const warmupCandidates = shuffleArray(
-    getAvailableTemplates(warmupUsedIds, warmupUsedNames)
+  // 사용 가능한 준비운동 후보 (절대 중복 없음)
+  // 1. 최근에 사용 안 한 것 먼저
+  // 2. 그 다음 최근에 사용한 것
+  // 3. 시간 짧은 순
+  let warmupCandidates = getAvailableTemplates(warmupUsedIds, warmupUsedNames)
       .filter((t) => t.duration_minutes <= 15)
-      .sort((a, b) => a.duration_minutes - b.duration_minutes)
-  )
+  
+  // 준비운동 후보가 없으면 시간 제한 완화
+  if (warmupCandidates.length === 0) {
+    console.warn('준비운동 후보 부족으로 시간 제한 완화')
+    warmupCandidates = getAvailableTemplates(warmupUsedIds, warmupUsedNames)
+  }
+  
+  // 신선한 운동과 최근 운동 분리
+  const freshWarmup = warmupCandidates.filter(t => !recentlyUsedTemplateIds.has(t.id))
+  const recentWarmup = warmupCandidates.filter(t => recentlyUsedTemplateIds.has(t.id))
+  
+  // 각각 섞기 (정렬 제거하여 랜덤성 유지)
+  warmupCandidates = [
+    ...shuffleArray(freshWarmup),
+    ...shuffleArray(recentWarmup)
+  ]
 
   // 준비운동 선택: 시간에 맞춰서, 절대 중복 없음
   for (const template of warmupCandidates) {
@@ -322,11 +407,32 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   const mainTemplates: any[] = []
   
   // 사용 가능한 메인 운동 후보 (준비운동 제외, 절대 중복 없음)
-  const mainCandidates = shuffleArray(
-    getAvailableTemplates(mainUsedIds, mainUsedNames)
+  // 사용 가능한 메인 운동 후보 (준비운동 제외, 절대 중복 없음)
+  let mainCandidates = getAvailableTemplates(mainUsedIds, mainUsedNames)
       .filter((t) => t.duration_minutes >= 5)
-      .sort((a, b) => b.duration_minutes - a.duration_minutes)
-  )
+
+  // 신선한 운동과 최근 운동 분리
+  const freshMain = mainCandidates.filter(t => !recentlyUsedTemplateIds.has(t.id))
+  const recentMain = mainCandidates.filter(t => recentlyUsedTemplateIds.has(t.id))
+  
+  // 각각 섞어서 합치기 (신선한 것 우선, 정렬 제거하여 랜덤성 유지)
+  mainCandidates = [
+    ...shuffleArray(freshMain),
+    ...shuffleArray(recentMain)
+  ]
+
+  // 메인 운동 부족 시 전체 템플릿에서 재활용 (세션 내 중복만 피함)
+  if (mainCandidates.length < 3) {
+    console.warn('메인 운동 후보 부족으로 전체 템플릿에서 재활용 시도')
+    const fallbackCandidates = getAvailableTemplates(mainUsedIds, mainUsedNames)
+      .filter((t) => t.duration_minutes >= 5)
+    
+    // 이미 candidates에 있는 것 제외하고 추가
+    const existingIds = new Set(mainCandidates.map(t => t.id))
+    const newFallbacks = fallbackCandidates.filter(t => !existingIds.has(t.id))
+    
+    mainCandidates.push(...shuffleArray(newFallbacks))
+  }
 
   // 메인 운동 선택: 시간에 맞춰서, 준비운동과 절대 중복 없음
   for (const template of mainCandidates) {
@@ -371,11 +477,36 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   const cooldownTemplates: any[] = []
   
   // 사용 가능한 마무리 운동 후보 (준비운동, 메인 운동 제외, 절대 중복 없음)
-  const cooldownCandidates = shuffleArray(
-    getAvailableTemplates(cooldownUsedIds, cooldownUsedNames)
-      .filter((t) => t.duration_minutes <= 15)
-      .sort((a, b) => a.duration_minutes - b.duration_minutes)
-  )
+  // 사용 가능한 마무리 운동 후보 (준비운동, 메인 운동 제외, 절대 중복 없음)
+  // 키워드 필터링: 스트레칭, 이완 등
+  // 사용 가능한 마무리 운동 후보 (준비운동, 메인 운동 제외, 절대 중복 없음)
+  // 키워드 필터링: 스트레칭, 이완 등 (강력 필터링)
+  let cooldownCandidates = getAvailableTemplates(cooldownUsedIds, cooldownUsedNames)
+      .filter((t) => {
+        const isStretching = stretchingKeywords.some(k => t.name.includes(k)) || 
+                             t.name.includes('자세') || 
+                             t.description?.includes('스트레칭') ||
+                             t.description?.includes('이완')
+        return isStretching
+      })
+
+  // 만약 스트레칭 운동이 전혀 없다면, 강도가 낮은 운동으로 대체하지만
+  // "Last Resort" (아무거나 가져오기)는 제거하여 메인 운동이 섞이는 것을 방지함
+  if (cooldownCandidates.length === 0) {
+    console.warn('마무리 운동용 스트레칭을 찾을 수 없어 저강도 운동으로 대체합니다 (최소한의 안전장치).')
+    cooldownCandidates = getAvailableTemplates(cooldownUsedIds, cooldownUsedNames)
+      .filter(t => t.pain_level <= 1 || t.duration_minutes <= 5) // 아주 약한 운동만 허용
+  }
+
+  // 신선한 운동과 최근 운동 분리
+  const freshCooldown = cooldownCandidates.filter(t => !recentlyUsedTemplateIds.has(t.id))
+  const recentCooldown = cooldownCandidates.filter(t => recentlyUsedTemplateIds.has(t.id))
+  
+  // 각각 섞어서 합치기 (정렬 제거하여 랜덤성 유지)
+  cooldownCandidates = [
+    ...shuffleArray(freshCooldown),
+    ...shuffleArray(recentCooldown)
+  ]
 
   // 마무리 운동 선택: 시간에 맞춰서, 준비운동과 메인 운동과 절대 중복 없음
   for (const template of cooldownCandidates) {
@@ -447,7 +578,7 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     warmupNames: warmupTemplates.map(t => t.name),
     mainNames: mainTemplates.map(t => t.name),
     cooldownNames: cooldownTemplates.map(t => t.name),
-    uniqueExercises: usedTemplateIds.size
+    uniqueExercises: allUsedTemplateIds.size
   })
   
   // 검증: 마무리 운동이 반드시 있어야 함
@@ -455,12 +586,12 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
     console.error('마무리 운동이 생성되지 않았습니다!')
     // 강제로 마무리 운동 추가
     const anyRemaining = finalTemplates
-      .filter((t) => !usedTemplateIds.has(t.id))
+      .filter((t) => !allUsedTemplateIds.has(t.id))
       .slice(0, 2)
     if (anyRemaining.length > 0) {
       anyRemaining.forEach((template, index) => {
-        usedTemplateIds.add(template.id)
-        usedExerciseNames.add(template.name)
+        allUsedTemplateIds.add(template.id)
+        allUsedExerciseNames.add(template.name)
         exercises.push({
           course_id: course.id,
           exercise_template_id: template.id,
