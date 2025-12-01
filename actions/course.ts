@@ -394,9 +394,11 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
 
   // 준비운동 선택: 시간에 맞춰서, 최소 2개는 반드시 보장
   let warmupSelectedCount = 0
+  const warmupTargetTime = warmupDuration // 목표 시간
+  
   for (const template of warmupCandidates) {
-    // 최대 5개까지 선택 가능
-    if (warmupSelectedCount >= 5) break
+    // 최대 8개까지 선택 가능 (시간 맞추기 위해 증가)
+    if (warmupSelectedCount >= 8) break
     
     // 중복 체크 (이중 확인)
     if (allUsedTemplateIds.has(template.id) || allUsedExerciseNames.has(template.name)) {
@@ -406,21 +408,25 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
       continue // 이미 이 세션에서 사용됨
     }
     
-    // 시간 체크: 시간이 남았거나 아직 선택된 운동이 2개 미만이면 추가
-    const canAdd = remainingTime > 0 || warmupTemplates.length < 2
+    // 현재까지 선택된 운동의 시간 합계
+    const currentTotalTime = warmupTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+    
+    // 시간 체크: 목표 시간에 맞춰서 선택
+    // 최소 2개는 시간과 관계없이 추가, 그 이후는 시간에 맞춰서
+    const canAdd = warmupTemplates.length < 2 || (currentTotalTime + template.duration_minutes <= warmupTargetTime * 1.2) // 20% 여유
     
     if (canAdd) {
       if (addExercise(template, 'warmup', warmupUsedIds, warmupUsedNames, warmupTemplates.length)) {
         warmupTemplates.push(template)
         warmupSelectedCount++
         
-        // 시간이 남아있으면 시간 차감
-        if (remainingTime > 0) {
-          remainingTime = Math.max(0, remainingTime - template.duration_minutes)
-        }
+        // 시간 차감
+        remainingTime = Math.max(0, remainingTime - template.duration_minutes)
         
-        // 시간이 충분히 채워졌고 최소 2개 이상이면 종료 가능
-        if (warmupTemplates.length >= 2 && remainingTime <= 0) {
+        // 목표 시간에 가까워지면 종료 (최소 2개는 보장)
+        const newTotalTime = warmupTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+        if (warmupTemplates.length >= 2 && newTotalTime >= warmupTargetTime * 0.8) {
+          // 목표 시간의 80% 이상이면 종료 가능
           break
         }
       }
@@ -527,16 +533,18 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
 
   // 메인 운동 선택: 시간에 맞춰서 선택, 최소 1개는 반드시 보장
   let mainSelectedCount = 0
+  const mainTargetTime = actualMainDuration // 목표 시간
   console.log('메인 운동 선택 루프 시작:', {
     candidatesCount: mainCandidates.length,
     remainingTime,
-    mainDuration
+    mainDuration,
+    mainTargetTime
   })
   
   for (const template of mainCandidates) {
-    // 최대 10개까지 선택 가능
-    if (mainSelectedCount >= 10) {
-      console.log('메인 운동 최대 개수 도달 (10개)')
+    // 최대 15개까지 선택 가능 (시간 맞추기 위해 증가)
+    if (mainSelectedCount >= 15) {
+      console.log('메인 운동 최대 개수 도달 (15개)')
       break
     }
     
@@ -550,41 +558,36 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
       continue // 이미 이 세션에서 사용됨
     }
     
-    // 시간 체크: 시간이 남았거나 아직 선택된 운동이 없으면 추가
-    // remainingTime이 0이어도 최소 1개는 반드시 선택해야 함
-    const canAdd = remainingTime > 0 || mainTemplates.length === 0
+    // 현재까지 선택된 운동의 시간 합계
+    const currentTotalTime = mainTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+    
+    // 시간 체크: 목표 시간에 맞춰서 선택
+    // 최소 1개는 시간과 관계없이 추가, 그 이후는 시간에 맞춰서
+    const canAdd = mainTemplates.length === 0 || (currentTotalTime + template.duration_minutes <= mainTargetTime * 1.2) // 20% 여유
     
     if (canAdd) {
-      console.log(`메인 운동 추가 시도: ${template.name} (시간: ${template.duration_minutes}분, 남은 시간: ${remainingTime}분)`)
+      console.log(`메인 운동 추가 시도: ${template.name} (시간: ${template.duration_minutes}분, 현재 합계: ${currentTotalTime}분, 목표: ${mainTargetTime}분)`)
       
       if (addExercise(template, 'main', mainUsedIds, mainUsedNames, mainTemplates.length)) {
         mainTemplates.push(template)
         mainSelectedCount++
         console.log(`✅ 메인 운동 추가 성공: ${template.name}`)
         
-        // 시간이 남아있으면 시간 차감
-        if (remainingTime > 0) {
-          remainingTime = Math.max(0, remainingTime - template.duration_minutes)
-        }
+        // 시간 차감
+        remainingTime = Math.max(0, remainingTime - template.duration_minutes)
         
-        // 시간이 충분히 채워졌고 최소 1개 이상이면 종료 가능
-        // 하지만 remainingTime이 0이어도 최소 1개는 확보해야 하므로 조건 수정
-        if (mainTemplates.length >= 1) {
-          // 시간이 남아있고 후보가 더 있으면 계속 선택 시도
-          if (remainingTime > 0 && mainCandidates.length > mainSelectedCount) {
-            continue // 더 선택 시도
-          }
-          // 시간이 없거나 후보가 없으면 종료
-          if (remainingTime <= 0 || mainCandidates.length <= mainSelectedCount) {
-            console.log('메인 운동 선택 완료 (시간 소진 또는 후보 소진)')
-            break
-          }
+        // 목표 시간에 가까워지면 종료 (최소 1개는 보장)
+        const newTotalTime = mainTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+        if (mainTemplates.length >= 1 && newTotalTime >= mainTargetTime * 0.8) {
+          // 목표 시간의 80% 이상이면 종료 가능
+          console.log(`메인 운동 선택 완료 (목표 시간의 ${Math.round((newTotalTime / mainTargetTime) * 100)}% 달성)`)
+          break
         }
       } else {
         console.log(`❌ 메인 운동 추가 실패: ${template.name} (addExercise 반환 false)`)
       }
     } else {
-      console.log(`메인 운동 추가 불가: ${template.name} (canAdd=false, remainingTime=${remainingTime}, mainTemplates.length=${mainTemplates.length})`)
+      console.log(`메인 운동 추가 불가: ${template.name} (시간 초과 예상: ${currentTotalTime} + ${template.duration_minutes} > ${mainTargetTime * 1.2})`)
     }
   }
 
@@ -763,9 +766,11 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
 
   // 마무리 운동 선택: 시간에 맞춰서, 최소 2개는 반드시 보장
   let cooldownSelectedCount = 0
+  const cooldownTargetTime = cooldownDuration // 목표 시간
+  
   for (const template of cooldownCandidates) {
-    // 최대 5개까지 선택 가능
-    if (cooldownSelectedCount >= 5) break
+    // 최대 8개까지 선택 가능 (시간 맞추기 위해 증가)
+    if (cooldownSelectedCount >= 8) break
     
     // 중복 체크 (이중 확인)
     if (allUsedTemplateIds.has(template.id) || allUsedExerciseNames.has(template.name)) {
@@ -775,21 +780,25 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
       continue // 이미 이 세션에서 사용됨
     }
     
-    // 시간 체크: 시간이 남았거나 아직 선택된 운동이 2개 미만이면 추가
-    const canAdd = remainingTime > 0 || cooldownTemplates.length < 2
+    // 현재까지 선택된 운동의 시간 합계
+    const currentTotalTime = cooldownTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+    
+    // 시간 체크: 목표 시간에 맞춰서 선택
+    // 최소 2개는 시간과 관계없이 추가, 그 이후는 시간에 맞춰서
+    const canAdd = cooldownTemplates.length < 2 || (currentTotalTime + template.duration_minutes <= cooldownTargetTime * 1.2) // 20% 여유
     
     if (canAdd) {
       if (addExercise(template, 'cooldown', cooldownUsedIds, cooldownUsedNames, cooldownTemplates.length)) {
         cooldownTemplates.push(template)
         cooldownSelectedCount++
         
-        // 시간이 남아있으면 시간 차감
-        if (remainingTime > 0) {
-          remainingTime = Math.max(0, remainingTime - template.duration_minutes)
-        }
+        // 시간 차감
+        remainingTime = Math.max(0, remainingTime - template.duration_minutes)
         
-        // 시간이 충분히 채워졌고 최소 2개 이상이면 종료 가능
-        if (cooldownTemplates.length >= 2 && remainingTime <= 0) {
+        // 목표 시간에 가까워지면 종료 (최소 2개는 보장)
+        const newTotalTime = cooldownTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+        if (cooldownTemplates.length >= 2 && newTotalTime >= cooldownTargetTime * 0.8) {
+          // 목표 시간의 80% 이상이면 종료 가능
           break
         }
       }
@@ -831,6 +840,27 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   
   // 실제 시간으로 업데이트
   const actualTotalTime = actualWarmupTime + actualMainTime + actualCooldownTime
+
+  console.log('시간 비교:', {
+    목표시간: {
+      total: totalDuration,
+      warmup: warmupDuration,
+      main: mainDuration,
+      cooldown: cooldownDuration
+    },
+    실제시간: {
+      total: actualTotalTime,
+      warmup: actualWarmupTime,
+      main: actualMainTime,
+      cooldown: actualCooldownTime
+    },
+    차이: {
+      total: actualTotalTime - totalDuration,
+      warmup: actualWarmupTime - warmupDuration,
+      main: actualMainTime - mainDuration,
+      cooldown: actualCooldownTime - cooldownDuration
+    }
+  })
 
   // 실제 시간으로 코스 업데이트
   if (course) {
