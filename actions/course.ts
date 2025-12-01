@@ -337,35 +337,52 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   let remainingTime = warmupDuration
   const warmupTemplates: any[] = []
   
-  // 사용 가능한 준비운동 후보 (절대 중복 없음)
-  // 사용 가능한 준비운동 후보 (절대 중복 없음)
-  // 1. 최근에 사용 안 한 것 먼저
-  // 2. 그 다음 최근에 사용한 것
-  // 3. 시간 짧은 순
-  let warmupCandidates = getAvailableTemplates(warmupUsedIds, warmupUsedNames)
-      .filter((t) => t.duration_minutes <= 15)
+  console.log('준비운동 선택 시작:', {
+    warmupDuration,
+    availableCount: getAvailableTemplates(warmupUsedIds, warmupUsedNames).length
+  })
+
+  // 단계별로 준비운동 후보 확보 (점진적 필터 완화)
+  let warmupCandidates: any[] = []
   
-  // 준비운동 후보가 없으면 시간 제한 완화
-  if (warmupCandidates.length === 0) {
-    console.warn('준비운동 후보 부족으로 시간 제한 완화')
-    warmupCandidates = getAvailableTemplates(warmupUsedIds, warmupUsedNames)
+  // 1단계: 이상적인 준비운동 (15분 이하)
+  let idealWarmup = getAvailableTemplates(warmupUsedIds, warmupUsedNames)
+    .filter((t) => t.duration_minutes <= 15)
+  
+  if (idealWarmup.length > 0) {
+    console.log(`1단계: 이상적인 준비운동 ${idealWarmup.length}개 발견`)
+    warmupCandidates = [...idealWarmup]
+  } else {
+    // 2단계: 시간 조건 완화 (20분 이하)
+    let relaxedWarmup = getAvailableTemplates(warmupUsedIds, warmupUsedNames)
+      .filter((t) => t.duration_minutes <= 20)
+    
+    if (relaxedWarmup.length > 0) {
+      console.log(`2단계: 시간 조건 완화 - ${relaxedWarmup.length}개 발견`)
+      warmupCandidates = [...relaxedWarmup]
+    } else {
+      // 3단계: 모든 사용 가능한 운동 (시간 제한 없음)
+      let allAvailable = getAvailableTemplates(warmupUsedIds, warmupUsedNames)
+      console.log(`3단계: 모든 사용 가능한 운동 - ${allAvailable.length}개 발견`)
+      warmupCandidates = [...allAvailable]
+    }
   }
   
   // 신선한 운동과 최근 운동 분리
   const freshWarmup = warmupCandidates.filter(t => !recentlyUsedTemplateIds.has(t.id))
   const recentWarmup = warmupCandidates.filter(t => recentlyUsedTemplateIds.has(t.id))
   
-  // 각각 섞기 (정렬 제거하여 랜덤성 유지)
+  // 각각 섞기
   warmupCandidates = [
     ...shuffleArray(freshWarmup),
     ...shuffleArray(recentWarmup)
   ]
 
-  // 준비운동 선택: 시간에 맞춰서, 절대 중복 없음
+  // 준비운동 선택: 시간에 맞춰서, 최소 2개는 반드시 보장
+  let warmupSelectedCount = 0
   for (const template of warmupCandidates) {
-    // 최소 2개 보장을 위해 시간 체크 완화
-    if (warmupTemplates.length >= 2 && remainingTime <= 0) break
-    if (warmupTemplates.length >= 5) break // 최대 5개
+    // 최대 5개까지 선택 가능
+    if (warmupSelectedCount >= 5) break
     
     // 중복 체크 (이중 확인)
     if (allUsedTemplateIds.has(template.id) || allUsedExerciseNames.has(template.name)) {
@@ -375,29 +392,57 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
       continue // 이미 이 세션에서 사용됨
     }
     
-    // 시간 체크 (최소 2개는 시간과 관계없이 추가)
-    if (template.duration_minutes <= remainingTime || warmupTemplates.length < 2) {
+    // 시간 체크: 시간이 남았거나 아직 선택된 운동이 2개 미만이면 추가
+    const canAdd = remainingTime > 0 || warmupTemplates.length < 2
+    
+    if (canAdd) {
       if (addExercise(template, 'warmup', warmupUsedIds, warmupUsedNames, warmupTemplates.length)) {
         warmupTemplates.push(template)
+        warmupSelectedCount++
+        
+        // 시간이 남아있으면 시간 차감
         if (remainingTime > 0) {
-          remainingTime -= template.duration_minutes
+          remainingTime = Math.max(0, remainingTime - template.duration_minutes)
+        }
+        
+        // 시간이 충분히 채워졌고 최소 2개 이상이면 종료 가능
+        if (warmupTemplates.length >= 2 && remainingTime <= 0) {
+          break
         }
       }
     }
   }
 
-  // 최소 2개 보장 (시간과 관계없이)
+  // 최소 2개는 반드시 보장 (시간과 관계없이)
   if (warmupTemplates.length < 2) {
-    const additional = getAvailableTemplates(warmupUsedIds, warmupUsedNames)
-      .filter((t) => t.duration_minutes <= 15)
-      .slice(0, 2 - warmupTemplates.length)
+    console.warn('⚠️ 준비운동이 부족하여 강제로 추가 시도')
     
-    for (const template of additional) {
+    const allAvailable = getAvailableTemplates(warmupUsedIds, warmupUsedNames)
+    const fallbackCandidates = shuffleArray(allAvailable)
+    
+    for (const template of fallbackCandidates) {
+      if (warmupTemplates.length >= 2) break
+      
+      // 중복 체크
+      if (allUsedTemplateIds.has(template.id) || allUsedExerciseNames.has(template.name)) {
+        continue
+      }
+      if (warmupUsedIds.has(template.id) || warmupUsedNames.has(template.name)) {
+        continue
+      }
+      
       if (addExercise(template, 'warmup', warmupUsedIds, warmupUsedNames, warmupTemplates.length)) {
         warmupTemplates.push(template)
+        console.log(`✅ 준비운동 강제 추가: ${template.name}`)
       }
     }
   }
+
+  console.log('✅ 준비운동 선택 완료:', {
+    count: warmupTemplates.length,
+    names: warmupTemplates.map(t => t.name),
+    totalTime: warmupTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+  })
 
   const actualWarmupTime = warmupTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
 
@@ -406,38 +451,68 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   remainingTime = mainDuration
   const mainTemplates: any[] = []
   
-  // 사용 가능한 메인 운동 후보 (준비운동 제외, 절대 중복 없음)
-  // 사용 가능한 메인 운동 후보 (준비운동 제외, 절대 중복 없음)
-  let mainCandidates = getAvailableTemplates(mainUsedIds, mainUsedNames)
-      .filter((t) => t.duration_minutes >= 5)
+  console.log('메인 운동 선택 시작:', {
+    mainDuration,
+    availableCount: getAvailableTemplates(mainUsedIds, mainUsedNames).length,
+    usedInWarmup: allUsedTemplateIds.size
+  })
+
+  // 단계별로 메인 운동 후보 확보 (점진적 필터 완화)
+  let mainCandidates: any[] = []
+  
+  // 1단계: 이상적인 메인 운동 (5분 이상, 강도 높은 운동)
+  let idealMain = getAvailableTemplates(mainUsedIds, mainUsedNames)
+    .filter((t) => t.duration_minutes >= 5)
+  
+  if (idealMain.length > 0) {
+    console.log(`1단계: 이상적인 메인 운동 ${idealMain.length}개 발견`)
+    mainCandidates = [...idealMain]
+  } else {
+    // 2단계: 시간 조건 완화 (3분 이상)
+    let relaxedMain = getAvailableTemplates(mainUsedIds, mainUsedNames)
+      .filter((t) => t.duration_minutes >= 3)
+    
+    if (relaxedMain.length > 0) {
+      console.log(`2단계: 시간 조건 완화 - ${relaxedMain.length}개 발견`)
+      mainCandidates = [...relaxedMain]
+    } else {
+      // 3단계: 시간 조건 더 완화 (1분 이상)
+      let veryRelaxedMain = getAvailableTemplates(mainUsedIds, mainUsedNames)
+        .filter((t) => t.duration_minutes >= 1)
+      
+      if (veryRelaxedMain.length > 0) {
+        console.log(`3단계: 시간 조건 더 완화 - ${veryRelaxedMain.length}개 발견`)
+        mainCandidates = [...veryRelaxedMain]
+      } else {
+        // 4단계: 모든 사용 가능한 운동 (시간 제한 없음)
+        let allAvailable = getAvailableTemplates(mainUsedIds, mainUsedNames)
+        console.log(`4단계: 모든 사용 가능한 운동 - ${allAvailable.length}개 발견`)
+        mainCandidates = [...allAvailable]
+      }
+    }
+  }
 
   // 신선한 운동과 최근 운동 분리
   const freshMain = mainCandidates.filter(t => !recentlyUsedTemplateIds.has(t.id))
   const recentMain = mainCandidates.filter(t => recentlyUsedTemplateIds.has(t.id))
   
-  // 각각 섞어서 합치기 (신선한 것 우선, 정렬 제거하여 랜덤성 유지)
+  // 각각 섞어서 합치기 (신선한 것 우선)
   mainCandidates = [
     ...shuffleArray(freshMain),
     ...shuffleArray(recentMain)
   ]
 
-  // 메인 운동 부족 시 전체 템플릿에서 재활용 (세션 내 중복만 피함)
-  if (mainCandidates.length < 3) {
-    console.warn('메인 운동 후보 부족으로 전체 템플릿에서 재활용 시도')
-    const fallbackCandidates = getAvailableTemplates(mainUsedIds, mainUsedNames)
-      .filter((t) => t.duration_minutes >= 5)
-    
-    // 이미 candidates에 있는 것 제외하고 추가
-    const existingIds = new Set(mainCandidates.map(t => t.id))
-    const newFallbacks = fallbackCandidates.filter(t => !existingIds.has(t.id))
-    
-    mainCandidates.push(...shuffleArray(newFallbacks))
-  }
+  console.log('메인 운동 후보 준비 완료:', {
+    total: mainCandidates.length,
+    fresh: freshMain.length,
+    recent: recentMain.length
+  })
 
-  // 메인 운동 선택: 시간에 맞춰서, 준비운동과 절대 중복 없음
+  // 메인 운동 선택: 시간에 맞춰서 선택, 최소 1개는 반드시 보장
+  let mainSelectedCount = 0
   for (const template of mainCandidates) {
-    if (mainTemplates.length >= 1 && remainingTime <= 0) break
-    if (mainTemplates.length >= 8) break // 최대 8개
+    // 최대 10개까지 선택 가능
+    if (mainSelectedCount >= 10) break
     
     // 중복 체크 (이중 확인)
     if (allUsedTemplateIds.has(template.id) || allUsedExerciseNames.has(template.name)) {
@@ -447,26 +522,72 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
       continue // 이미 이 세션에서 사용됨
     }
     
-    // 시간 체크 (최소 1개는 시간과 관계없이 추가)
-    if (template.duration_minutes <= remainingTime || mainTemplates.length < 1) {
+    // 시간 체크: 시간이 남았거나 아직 선택된 운동이 없으면 추가
+    const canAdd = remainingTime > 0 || mainTemplates.length === 0
+    
+    if (canAdd) {
       if (addExercise(template, 'main', mainUsedIds, mainUsedNames, mainTemplates.length)) {
         mainTemplates.push(template)
+        mainSelectedCount++
+        
+        // 시간이 남아있으면 시간 차감
         if (remainingTime > 0) {
-          remainingTime -= template.duration_minutes
+          remainingTime = Math.max(0, remainingTime - template.duration_minutes)
+        }
+        
+        // 시간이 충분히 채워졌고 최소 1개 이상이면 종료 가능
+        if (mainTemplates.length >= 1 && remainingTime <= 0) {
+          // 하지만 최소 2-3개는 확보하려고 시도
+          if (mainTemplates.length < 2 && mainCandidates.length > mainSelectedCount) {
+            continue // 더 선택 시도
+          }
+          break
         }
       }
     }
   }
 
-  // 최소 1개 보장 (시간과 관계없이)
+  // 최소 1개는 반드시 보장 (시간과 관계없이)
   if (mainTemplates.length === 0) {
-    const first = getAvailableTemplates(mainUsedIds, mainUsedNames)
-      .filter((t) => t.duration_minutes >= 5)
-      .find((t) => !allUsedTemplateIds.has(t.id) && !allUsedExerciseNames.has(t.name))
+    console.warn('⚠️ 메인 운동이 선택되지 않아 강제로 추가 시도')
     
-    if (first && addExercise(first, 'main', mainUsedIds, mainUsedNames, 0)) {
-      mainTemplates.push(first)
+    // 모든 사용 가능한 운동에서 찾기 (필터 없이)
+    const allAvailable = getAvailableTemplates(mainUsedIds, mainUsedNames)
+    const fallbackCandidates = shuffleArray(allAvailable)
+    
+    for (const template of fallbackCandidates) {
+      if (mainTemplates.length >= 1) break
+      
+      // 중복 체크
+      if (allUsedTemplateIds.has(template.id) || allUsedExerciseNames.has(template.name)) {
+        continue
+      }
+      if (mainUsedIds.has(template.id) || mainUsedNames.has(template.name)) {
+        continue
+      }
+      
+      if (addExercise(template, 'main', mainUsedIds, mainUsedNames, 0)) {
+        mainTemplates.push(template)
+        console.log(`✅ 메인 운동 강제 추가: ${template.name}`)
+        break
+      }
     }
+  }
+
+  // 여전히 메인 운동이 없으면 에러 로그
+  if (mainTemplates.length === 0) {
+    console.error('❌ 메인 운동을 선택할 수 없습니다!', {
+      availableTemplates: finalTemplates.length,
+      usedInWarmup: allUsedTemplateIds.size,
+      warmupCount: warmupTemplates.length,
+      remainingAvailable: getAvailableTemplates(mainUsedIds, mainUsedNames).length
+    })
+  } else {
+    console.log('✅ 메인 운동 선택 완료:', {
+      count: mainTemplates.length,
+      names: mainTemplates.map(t => t.name),
+      totalTime: mainTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+    })
   }
 
   const actualMainTime = mainTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
@@ -476,12 +597,31 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
   remainingTime = cooldownDuration
   const cooldownTemplates: any[] = []
   
-  // 사용 가능한 마무리 운동 후보 (준비운동, 메인 운동 제외, 절대 중복 없음)
-  // 사용 가능한 마무리 운동 후보 (준비운동, 메인 운동 제외, 절대 중복 없음)
-  // 키워드 필터링: 스트레칭, 이완 등
-  // 사용 가능한 마무리 운동 후보 (준비운동, 메인 운동 제외, 절대 중복 없음)
-  // 키워드 필터링: 스트레칭, 이완 등 (강력 필터링)
-  let cooldownCandidates = getAvailableTemplates(cooldownUsedIds, cooldownUsedNames)
+  console.log('마무리 운동 선택 시작:', {
+    cooldownDuration,
+    availableCount: getAvailableTemplates(cooldownUsedIds, cooldownUsedNames).length,
+    usedInWarmupAndMain: allUsedTemplateIds.size
+  })
+
+  // 단계별로 마무리 운동 후보 확보 (점진적 필터 완화)
+  let cooldownCandidates: any[] = []
+  
+  // 1단계: 이상적인 마무리 운동 (스트레칭 키워드 포함, 15분 이하)
+  let idealCooldown = getAvailableTemplates(cooldownUsedIds, cooldownUsedNames)
+    .filter((t) => {
+      const isStretching = stretchingKeywords.some(k => t.name.includes(k)) || 
+                           t.name.includes('자세') || 
+                           t.description?.includes('스트레칭') ||
+                           t.description?.includes('이완')
+      return isStretching && t.duration_minutes <= 15
+    })
+  
+  if (idealCooldown.length > 0) {
+    console.log(`1단계: 이상적인 마무리 운동 ${idealCooldown.length}개 발견`)
+    cooldownCandidates = [...idealCooldown]
+  } else {
+    // 2단계: 스트레칭 키워드만 (시간 제한 완화)
+    let relaxedCooldown = getAvailableTemplates(cooldownUsedIds, cooldownUsedNames)
       .filter((t) => {
         const isStretching = stretchingKeywords.some(k => t.name.includes(k)) || 
                              t.name.includes('자세') || 
@@ -489,30 +629,42 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
                              t.description?.includes('이완')
         return isStretching
       })
-
-  // 만약 스트레칭 운동이 전혀 없다면, 강도가 낮은 운동으로 대체하지만
-  // "Last Resort" (아무거나 가져오기)는 제거하여 메인 운동이 섞이는 것을 방지함
-  if (cooldownCandidates.length === 0) {
-    console.warn('마무리 운동용 스트레칭을 찾을 수 없어 저강도 운동으로 대체합니다 (최소한의 안전장치).')
-    cooldownCandidates = getAvailableTemplates(cooldownUsedIds, cooldownUsedNames)
-      .filter(t => t.pain_level <= 1 || t.duration_minutes <= 5) // 아주 약한 운동만 허용
+    
+    if (relaxedCooldown.length > 0) {
+      console.log(`2단계: 스트레칭 키워드만 - ${relaxedCooldown.length}개 발견`)
+      cooldownCandidates = [...relaxedCooldown]
+    } else {
+      // 3단계: 저강도 운동 (pain_level <= 1 또는 duration <= 5)
+      let lowIntensityCooldown = getAvailableTemplates(cooldownUsedIds, cooldownUsedNames)
+        .filter(t => t.pain_level <= 1 || t.duration_minutes <= 5)
+      
+      if (lowIntensityCooldown.length > 0) {
+        console.log(`3단계: 저강도 운동 - ${lowIntensityCooldown.length}개 발견`)
+        cooldownCandidates = [...lowIntensityCooldown]
+      } else {
+        // 4단계: 모든 사용 가능한 운동 (시간 제한 없음)
+        let allAvailable = getAvailableTemplates(cooldownUsedIds, cooldownUsedNames)
+        console.log(`4단계: 모든 사용 가능한 운동 - ${allAvailable.length}개 발견`)
+        cooldownCandidates = [...allAvailable]
+      }
+    }
   }
 
   // 신선한 운동과 최근 운동 분리
   const freshCooldown = cooldownCandidates.filter(t => !recentlyUsedTemplateIds.has(t.id))
   const recentCooldown = cooldownCandidates.filter(t => recentlyUsedTemplateIds.has(t.id))
   
-  // 각각 섞어서 합치기 (정렬 제거하여 랜덤성 유지)
+  // 각각 섞어서 합치기
   cooldownCandidates = [
     ...shuffleArray(freshCooldown),
     ...shuffleArray(recentCooldown)
   ]
 
-  // 마무리 운동 선택: 시간에 맞춰서, 준비운동과 메인 운동과 절대 중복 없음
+  // 마무리 운동 선택: 시간에 맞춰서, 최소 2개는 반드시 보장
+  let cooldownSelectedCount = 0
   for (const template of cooldownCandidates) {
-    // 최소 2개 보장을 위해 시간 체크 완화
-    if (cooldownTemplates.length >= 2 && remainingTime <= 0) break
-    if (cooldownTemplates.length >= 5) break // 최대 5개
+    // 최대 5개까지 선택 가능
+    if (cooldownSelectedCount >= 5) break
     
     // 중복 체크 (이중 확인)
     if (allUsedTemplateIds.has(template.id) || allUsedExerciseNames.has(template.name)) {
@@ -522,29 +674,57 @@ export async function generateCourse(questionnaire: CourseQuestionnaire) {
       continue // 이미 이 세션에서 사용됨
     }
     
-    // 시간 체크 (최소 2개는 시간과 관계없이 추가)
-    if (template.duration_minutes <= remainingTime || cooldownTemplates.length < 2) {
+    // 시간 체크: 시간이 남았거나 아직 선택된 운동이 2개 미만이면 추가
+    const canAdd = remainingTime > 0 || cooldownTemplates.length < 2
+    
+    if (canAdd) {
       if (addExercise(template, 'cooldown', cooldownUsedIds, cooldownUsedNames, cooldownTemplates.length)) {
         cooldownTemplates.push(template)
+        cooldownSelectedCount++
+        
+        // 시간이 남아있으면 시간 차감
         if (remainingTime > 0) {
-          remainingTime -= template.duration_minutes
+          remainingTime = Math.max(0, remainingTime - template.duration_minutes)
+        }
+        
+        // 시간이 충분히 채워졌고 최소 2개 이상이면 종료 가능
+        if (cooldownTemplates.length >= 2 && remainingTime <= 0) {
+          break
         }
       }
     }
   }
 
-  // 최소 2개 반드시 보장 (시간과 관계없이)
+  // 최소 2개는 반드시 보장 (시간과 관계없이)
   if (cooldownTemplates.length < 2) {
-    const additional = getAvailableTemplates(cooldownUsedIds, cooldownUsedNames)
-      .filter((t) => t.duration_minutes <= 15)
-      .slice(0, 2 - cooldownTemplates.length)
+    console.warn('⚠️ 마무리 운동이 부족하여 강제로 추가 시도')
     
-    for (const template of additional) {
+    const allAvailable = getAvailableTemplates(cooldownUsedIds, cooldownUsedNames)
+    const fallbackCandidates = shuffleArray(allAvailable)
+    
+    for (const template of fallbackCandidates) {
+      if (cooldownTemplates.length >= 2) break
+      
+      // 중복 체크
+      if (allUsedTemplateIds.has(template.id) || allUsedExerciseNames.has(template.name)) {
+        continue
+      }
+      if (cooldownUsedIds.has(template.id) || cooldownUsedNames.has(template.name)) {
+        continue
+      }
+      
       if (addExercise(template, 'cooldown', cooldownUsedIds, cooldownUsedNames, cooldownTemplates.length)) {
         cooldownTemplates.push(template)
+        console.log(`✅ 마무리 운동 강제 추가: ${template.name}`)
       }
     }
   }
+
+  console.log('✅ 마무리 운동 선택 완료:', {
+    count: cooldownTemplates.length,
+    names: cooldownTemplates.map(t => t.name),
+    totalTime: cooldownTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
+  })
 
   const actualCooldownTime = cooldownTemplates.reduce((sum, t) => sum + t.duration_minutes, 0)
   
