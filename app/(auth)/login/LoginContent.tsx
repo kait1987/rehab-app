@@ -1,11 +1,12 @@
-"use client"
+'use client';
 
-import { useState } from "react"
+import { useSearchParams } from 'next/navigation';
+import { useState } from 'react';
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -29,11 +30,9 @@ type LoginFormValues = z.infer<typeof loginSchema>
 export default function LoginContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const error = searchParams.get('error')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  
-  // URL 파라미터에서 error 읽기
-  const urlError = searchParams.get('error')
+  const [formError, setFormError] = useState<string | null>(null)
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -45,12 +44,12 @@ export default function LoginContent() {
 
   const onSubmit = async (data: LoginFormValues) => {
     setIsSubmitting(true)
-    setError(null)
+    setFormError(null)
     try {
       const result = await signIn(data)
 
       if (result?.error) {
-        setError(result.error)
+        setFormError(result.error)
       } else {
         // signIn에서 redirect를 처리하므로 여기까지 오지 않음
         const redirect = searchParams.get("redirect")
@@ -58,8 +57,8 @@ export default function LoginContent() {
           router.push(redirect)
         }
       }
-    } catch (error) {
-      setError(`오류가 발생했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`)
+    } catch (err) {
+      setFormError(`오류가 발생했습니다: ${err instanceof Error ? err.message : "알 수 없는 오류"}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -75,9 +74,9 @@ export default function LoginContent() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {(error || urlError) && (
+          {(error || formError) && (
             <div className="mb-4 p-3 bg-red-900/30 border border-red-700 text-red-300 rounded">
-              {error || urlError}
+              {error || formError}
             </div>
           )}
 
