@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { KakaoMap } from "@/components/map/KakaoMap"
+import { KakaoMapWithGyms } from "@/components/map/KakaoMapWithGyms"
 import { getNearbyGyms } from "@/actions/gym"
 import { getCurrentLocation, geocodeAddress, loadKakaoMapScript } from "@/lib/kakao-map"
 import { Gym } from "@/types"
@@ -244,7 +244,7 @@ export default function MapPage() {
         {/* Map */}
         <div className={`${viewMode === "map" ? "flex" : "hidden"} md:flex flex-1 relative bg-[#1A1B1D]`}>
           {location ? (
-            <KakaoMap
+            <KakaoMapWithGyms
               center={location}
               gyms={gyms}
               onGymClick={handleGymClick}

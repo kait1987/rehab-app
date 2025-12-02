@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // PWA 설정
-  async headers() {
+  headers: async () => {
     return [
       {
         source: '/sw.js',
@@ -10,13 +9,9 @@ const nextConfig = {
             key: 'Cache-Control',
             value: 'public, max-age=0, must-revalidate',
           },
-          {
-            key: 'Service-Worker-Allowed',
-            value: '/',
-          },
         ],
       },
-    ]
+    ];
   },
   // 빌드 시 ESLint 오류를 경고로만 처리 (배포를 위해 임시 설정)
   eslint: {

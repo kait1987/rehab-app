@@ -1,18 +1,20 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { NotificationPrompt } from "@/components/shared/NotificationPrompt";
-import { ServiceWorkerRegistration } from "@/components/shared/ServiceWorkerRegistration";
-import { LocationHandler } from "@/components/shared/LocationHandler";
+import ServiceWorkerRegistration from "@/components/shared/ServiceWorkerRegistration";
 
 export const metadata: Metadata = {
-  title: "동네 재활 헬스장",
-  description: "동네에서 재활운동하기 좋은 헬스장과 내 몸에 맞는 재활 코스를 한 번에",
+  title: "Rehab Application",
+  description: "Physical Therapy and Recovery Management",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
-    title: "동네 재활 헬스장",
+    statusBarStyle: "black-translucent",
+    title: "Rehab",
   },
+  formatDetection: {
+    telephone: false,
+  },
+  themeColor: "#208fa3",
 };
 
 export const viewport: Viewport = {
@@ -20,7 +22,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#1A1B1D",
+  themeColor: "#208fa3",
 };
 
 export default function RootLayout({
@@ -31,17 +33,20 @@ export default function RootLayout({
   return (
     <html lang="ko" className="dark">
       <head>
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent"
+        />
+        <meta name="apple-mobile-web-app-title" content="Rehab" />
         <link rel="manifest" href="/manifest.json" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
-        <meta name="theme-color" content="#1A1B1D" />
+        <meta name="theme-color" content="#208fa3" />
       </head>
-      <body
-        className="antialiased dark"
-      >
-        {children}
-        <LocationHandler />
+      <body>
         <ServiceWorkerRegistration />
-        <NotificationPrompt />
+        {children}
       </body>
     </html>
   );

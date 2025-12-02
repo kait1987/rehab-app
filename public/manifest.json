@@ -1,25 +1,25 @@
 {
-  "name": "동네 재활 헬스장",
-  "short_name": "재활 헬스장",
-  "description": "동네에서 재활운동하기 좋은 헬스장과 내 몸 상태에 맞는 재활 코스를 한 번에",
-  "start_url": "/main",
-  "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#2563eb",
-  "orientation": "portrait",
+  "name": "Rehab Application",
+  "short_name": "Rehab",
+  "description": "Physical Therapy and Recovery Management Application",
+  "start_url": "/",
   "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#208fa3",
   "icons": [
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }
